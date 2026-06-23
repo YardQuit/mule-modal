@@ -1,0 +1,238 @@
+#+TITLE: Mule-Modal — Opinionated Modal Editing for Emacs
+#+AUTHOR: Michael Jones (YardQuit)
+
+* Overview
+
+Mule-Modal is an opinionated modal editing minor-mode for Emacs, that
+leverages Emacs' own built-in functions wherever possible. There is no
+overlay state — just a minor-mode keymap that toggles on and off.
+
+Warning: May be incompatible with other packages and modal editors.
+This package overrides 'ESC' to manage input states (MULE/Normal).
+Loading it alongside other packages that bind 'ESC' will cause
+unexpected behavior and state
+conflicts.
+
+** Customizing Keybindings
+
+You can override existing bindings or add new ones in your `config.el` by modifying `mule-mode-map`.
+
+*Override an existing binding:*
+#+BEGIN_SRC elisp
+  ;; Replace the default behavior of ';' with consult-outline
+  (when (boundp 'mule-mode-map)
+    (keymap-set mule-mode-map ";" #'consult-outline)
+#+END_SRC
+
+*Unbind a suppressed key to fall through:*
+#+BEGIN_SRC elisp
+  ;; Make ',' fall through to the major mode instead of being ignored
+  (when (boundp 'mule-mode-map)
+    (keymap-unset mule-mode-map ",")
+#+END_SRC
+
+*Add a leader key map:*
+#+BEGIN_SRC elisp
+  ;; Leader Map Definition
+  (when (boundp 'mule-mode-map)
+    ;; Ensure leader map exists
+    (unless (boundp 'mule-leader-map)
+      (defvar mule-leader-map (make-sparse-keymap)
+        "Leader key map under SPC."))
+
+    ;; Bind SPC to the leader map
+    (keymap-set mule-mode-map "SPC" mule-leader-map)
+
+    ;; Define leader sub-commands
+    (keymap-set mule-leader-map "f f" #'find-file)
+    (keymap-set mule-leader-map "b b" #'switch-to-buffer)
+    (keymap-set mule-leader-map "g g" #'magit-status)
+#+END_SRC
+
+** Customizing the Cursor
+
+MULE manages the cursor shape per-buffer using custom variables.
+When MULE is =ON= (Normal) state, it uses `mule-cursor-normal`.
+When MULE is =OFF= (Insert) state, it uses `mule-cursor-insert`.
+
+If either variable is set to =nil=, MULE removes the buffer-local setting,
+forcing Emacs to use your global default defined by `setq-default cursor-type`.
+
+*Accepted Cursor Values*
+|----------------+----------------------------------|
+| Value          | Appearance                       |
+|----------------+----------------------------------|
+| ~box~          | Solid block cursor               |
+| ~bar~          | Thin vertical bar                |
+| ~hbar~         | Thin horizontal bar              |
+| ~hollow~       | Hollow box outline               |
+| ~(bar . N)~    | Vertical bar with width N pixels |
+| ~(hollow . N)~ | Hollow box with width N pixels   |
+| ~nil~          | Fallback to default cursor       |
+|                | "Should NOT be use on default"   |
+|----------------+----------------------------------|
+
+*Example:*
+#+BEGIN_SRC elisp :tangle no
+  ;; Global fallback (used if variables are nil or in non-MULE buffers)
+  (setq-default cursor-type '(hollow . 2))
+
+  ;; MULE Normal state (when ESC is pressed)
+  (setq mule-cursor-normal 'box)          ; Or set to nil to match global
+
+  ;; MULE Insert state (when typing)
+  (setq mule-cursor-insert '(bar . 2))    ; Or set to nil to match global
+#+END_SRC
+
+** States
+|--------------+---------------------+-----------------------------------------------------|
+| State        | Indicator           | Meaning                                             |
+|--------------+---------------------+-----------------------------------------------------|
+| ON  (Normal) | ` MULE` in modeline | Keys are commands. Raw character input is blocked.  |
+| OFF (Insert) | Thin bar cursor     | `mule-mode` is off. All keys pass through normally. |
+|--------------+---------------------+-----------------------------------------------------|
+
+- Press /Escape/ to enter ON (Normal) State.
+- Press any insert-entry key (i, I, a, A, o, O, c) to return to OFF (Insert) State.
+
+* Key Reference
+
+** Entering Insert State
+|-----+-------------------------------+-------------------------------|
+| Key | Command                       | Description                   |
+|-----+-------------------------------+-------------------------------|
+| i   | mule-mode-insert              | Enter insert at point         |
+| I   | mule-insert-beginning-of-line | Insert at beginning of line   |
+| a   | mule-insert-after             | Insert after current char     |
+| A   | mule-insert-end-of-line       | Insert at end of line         |
+| o   | mule-open-below               | Open line below, enter insert |
+| O   | mule-open-above               | Open line above, enter insert |
+|-----+-------------------------------+-------------------------------|
+
+** Navigation
+|-----+----------------------+---------------|
+| Key | Command              | Description   |
+|-----+----------------------+---------------|
+| h   | backward-char        | Move left     |
+| j   | next-line            | Move down     |
+| k   | previous-line        | Move up       |
+| l   | forward-char         | Move right    |
+| w   | mule-right-word      | Forward word  |
+| b   | mule-left-word       | Backward word |
+| W   | mule-forward-symbol  | Forward sexp  |
+| B   | mule-backward-symbol | Backward sexp |
+|-----+----------------------+---------------|
+
+** Goto / Scroll
+|-----+--------------------------+-------------------|
+| Key | Command                  | Description       |
+|-----+--------------------------+-------------------|
+| g g | beginning-of-buffer      | Jump to top       |
+| g t | beginning-of-buffer      | Jump to top (alt) |
+| g e | end-of-buffer            | Jump to bottom    |
+| g h | mule-move-to-left-margin | Beginning of line |
+| g l | mule-move-to-end-of-line | End of line       |
+| :   | mule-goto-line           | Go to line number |
+| z z | recenter-top-bottom      | Recenter screen   |
+|-----+--------------------------+-------------------|
+
+** Editing
+|-----+----------------------------+-----------------------------|
+| Key | Command                    | Description                 |
+|-----+----------------------------+-----------------------------|
+| d   | mule-delete                | Delete char or region       |
+| x   | mule-delete                | Delete char or region (alt) |
+| D   | mule-kill-to-end-of-line   | Kill to end of line         |
+| c   | mule-change                | Delete and enter insert     |
+| C   | mule-comment-line          | Comment/uncomment line      |
+| C-j | join-line                  | Join current with next      |
+| >   | mule-indent-region-or-line | Indent region or line       |
+|-----+----------------------------+-----------------------------|
+
+** Kill / Yank
+|-----+----------------+--------------------------|
+| Key | Command        | Description              |
+|-----+----------------+--------------------------|
+| y   | kill-ring-save | Copy (save to kill ring) |
+| p   | mule-yank      | Paste from clipboard     |
+| P   | mule-yank-pop  | Rotate through kill ring |
+|-----+----------------+--------------------------|
+
+** Undo
+|-----+----------------+-------------|
+| Key | Command        | Description |
+|-----+----------------+-------------|
+| u   | undo           | Undo        |
+| U   | mule-undo-redo | Redo        |
+|-----+----------------+-------------|
+
+** Visual Selection
+|-----+---------------------------+----------------------------|
+| Key | Command                   | Description                |
+|-----+---------------------------+----------------------------|
+| v   | set-mark-command          | Set mark (character-wise)  |
+| V   | mule-visual-line-toggle   | Toggle line-wise selection |
+| J   | mule-visual-next-line     | Extend selection downward  |
+| K   | mule-visual-previous-line | Extend selection upward    |
+| %   | mark-whole-buffer         | Select entire buffer       |
+|-----+---------------------------+----------------------------|
+
+** Mark Objects (m prefix)
+|-----+--------------------------+------------------------------------------|
+| Key | Command                  | Description                              |
+|-----+--------------------------+------------------------------------------|
+| m i | mule-mark-inner          | Select inside delimiters (exclude chars) |
+| m a | mule-mark-outer          | Select around delimiters (include chars) |
+| m w | mule-mark-word           | Select word at point                     |
+| m s | mule-mark-sentence       | Select sentence at point                 |
+| m p | mule-mark-paragraph      | Select paragraph at point                |
+| m v | mule-rectangle-mark-mode | Rectangle selection                      |
+|-----+--------------------------+------------------------------------------|
+
+** Search / Replace
+|-----+----------------+---------------------|
+| Key | Command        | Description         |
+|-----+----------------+---------------------|
+| r q | query-replace  | Interactive replace |
+| r r | replace-regexp | Regexp replace      |
+|-----+----------------+---------------------|
+
+** Miscellaneous
+|-----+------------------------+--------------------------------|
+| Key | Command                | Description                    |
+|-----+------------------------+--------------------------------|
+| ?   | mule-describe-bindings | Show all mule-mode keybindings |
+| .   | repeat                 | Repeat last command            |
+| g q | mule-fill-region       | Fill selected region           |
+| g Q | mule-fill-paragraph    | Fill current paragraph         |
+|-----+------------------------+--------------------------------|
+
+
+* Org-Scratch Buffer
+
+This package provides a utility to create or switch to a disposable Org buffer.
+
+- Command: ~mule-org-scratch~
+- Function: Creates or switches to ~*org-scratch*~ for quick notes. Save with ~C-x C-s~.
+
+* Excluded Modes
+
+MULE-Modal automatically disables itself in the following major modes to preserve native functionality:
+
+- ibuffer-mode
+- eshell-mode
+- term-mode
+- vterm-mode
+- comint-mode
+- magit-status-mode
+- dired-mode
+
+This is enforced via mode hooks at priority *-10*.
+
+* Minibuffer Safety
+
+When the minibuffer is entered, `mule-mode` is temporarily disabled. On exit, the previous state is restored. This prevents hangs caused by modal key interception during minibuffer interaction.
+
+* Dependencies
+
+No external packages are required.
