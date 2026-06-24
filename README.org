@@ -17,9 +17,28 @@ Loading it alongside other packages that bind 'ESC' will cause
 unexpected behavior and state
 conflicts.
 
+** Installation
+Place mule-modal.el at ~/.config/emacs/mule-modal/mule-modal.el, then
+add the following to your init.el or config.el:
+
+#+begin_src emacs-lisp
+
+  (let ((mule-path (expand-file-name "~/.config/emacs/mule-modal/mule-modal.el" user-emacs-directory)))
+  (if (file-exists-p mule-path)
+      (progn
+        (load mule-path nil t)
+        ;; Activate mule-mode in buffers that already exist
+        (dolist (buf (buffer-list))
+          (with-current-buffer buf
+            (mule--ensure-default-state))))
+    (message "WARNING: Mule modal module not found at %s. Some keybindings may fail." mule-path)))
+
+#+end_src
+
 ** Customizing Keybindings
 
-You can override existing bindings or add new ones in your `config.el` by modifying `mule-mode-map`.
+You can override existing bindings or add new ones in your `config.el`
+by modifying `mule-mode-map`.
 
 *Override an existing binding:*
 #+BEGIN_SRC elisp
@@ -59,8 +78,9 @@ MULE manages the cursor shape per-buffer using custom variables.
 When MULE is =ON= (Normal) state, it uses `mule-cursor-normal`.
 When MULE is =OFF= (Insert) state, it uses `mule-cursor-insert`.
 
-If either variable is set to =nil=, MULE removes the buffer-local setting,
-forcing Emacs to use your global default defined by `setq-default cursor-type`.
+If either variable is set to =nil=, MULE removes the buffer-local
+setting, forcing Emacs to use your global default defined by
+`setq-default cursor-type`.
 
 *Accepted Cursor Values*
 |----------------+----------------------------------|
@@ -97,7 +117,8 @@ forcing Emacs to use your global default defined by `setq-default cursor-type`.
 |--------------+---------------------+-----------------------------------------------------|
 
 - Press /Escape/ to enter ON (Normal) State.
-- Press any insert-entry key (i, I, a, A, o, O, c) to return to OFF (Insert) State.
+- Press any insert-entry key (i, I, a, A, o, O, c) to return to OFF
+  (Insert) State.
 
 * Key Reference
 
@@ -214,14 +235,17 @@ forcing Emacs to use your global default defined by `setq-default cursor-type`.
 
 * Org-Scratch Buffer
 
-This package provides a utility to create or switch to a disposable Org buffer.
+This package provides a utility to create or switch to a disposable
+Org buffer.
 
 - Command: ~mule-org-scratch~
-- Function: Creates or switches to ~*org-scratch*~ for quick notes. Save with ~C-x C-s~.
+- Function: Creates or switches to ~*org-scratch*~ for quick notes.
+  Save with ~C-x C-s~.
 
 * Excluded Modes
 
-MULE-Modal automatically disables itself in the following major modes to preserve native functionality:
+MULE-Modal automatically disables itself in the following major modes
+to preserve native functionality:
 
 - ibuffer-mode
 - eshell-mode
@@ -233,7 +257,8 @@ MULE-Modal automatically disables itself in the following major modes to preserv
 
 * Minibuffer Safety
 
-When the minibuffer is entered, `mule-mode` is temporarily disabled. On exit, the previous state is restored.
+When the minibuffer is entered, `mule-mode` is temporarily disabled.
+On exit, the previous state is restored.
 
 * Dependencies
 
