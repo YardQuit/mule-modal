@@ -227,11 +227,9 @@ MULE-Modal automatically disables itself in the following major modes to preserv
 - magit-status-mode
 - dired-mode
 
-This is enforced via mode hooks at priority *-10*.
-
 * Minibuffer Safety
 
-When the minibuffer is entered, `mule-mode` is temporarily disabled. On exit, the previous state is restored. This prevents hangs caused by modal key interception during minibuffer interaction.
+When the minibuffer is entered, `mule-mode` is temporarily disabled. On exit, the previous state is restored.
 
 * Dependencies
 
