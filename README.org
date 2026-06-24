@@ -77,10 +77,10 @@ forcing Emacs to use your global default defined by `setq-default cursor-type`.
   ;; Global fallback (used if variables are nil or in non-MULE buffers)
   (setq-default cursor-type '(hollow . 2))
 
-  ;; MULE Normal state (when ESC is pressed)
+  ;; MULE ON (Normal) state (when ESC is pressed)
   (setq mule-cursor-normal 'box)          ; Or set to nil to match global
 
-  ;; MULE Insert state (when typing)
+  ;; MULE OFF (Insert) state (when typing)
   (setq mule-cursor-insert '(bar . 2))    ; Or set to nil to match global
 #+END_SRC
 
