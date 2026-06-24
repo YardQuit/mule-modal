@@ -1,4 +1,8 @@
-#+TITLE: Mule-Modal — Opinionated Modal Editing for Emacs
+#+TITLE: README
+#+date:       [2026-06-24 Wed 14:26]
+#+filetags:   :project:
+#+identifier: 20260624T142644
+#+signature:  39=1
 #+AUTHOR: Michael Jones (YardQuit)
 
 * Overview
