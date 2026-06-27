@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo+
 ;; URL: https://github.com/yardquit/mule-modal
-;; Version: 1.2
+;; Version: 1.3
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/mule-modal
@@ -45,10 +45,12 @@
 (require 'thingatpt) ;; (mule-select-word)
 
 (eval-and-compile
-  (declare-function org-open-at-point "org") ;; (mule-enter-dwim)
-  (declare-function org-element-at-point "org")) ;; (mule-enter-dwim)
+  (declare-function org-open-at-point "org")     ;(mule-enter-dwim)
+  (declare-function org-element-at-point "org")  ;(mule-enter-dwim)
+  (declare-function org-open-at-point "org")     ;(mule-comment-dwim)
+  (declare-function org-element-at-point "org")) ;(mule-comment-dwim)
 
-(defvar mule-mode-map nil ;; (declaration of mule-mode-map)
+(defvar mule-mode-map nil ;(declaration of mule-mode-map)
   "Keymap for MULE minor mode.")
 
 ;;; ---------------------------------------------------------------------------
@@ -571,7 +573,6 @@
            (t
             (error "Unsupported delimiter '%c'" open-char))))
 
-    ;; If on opener, use point directly; otherwise search backward
     (if on-opener
         (setq start-pos (point))
       (if (and (char-after) (= (char-after) open-char))
