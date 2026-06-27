@@ -135,18 +135,20 @@ setting, forcing Emacs to use your global default defined by
 |-----+-------------------------------+-------------------------------|
 
 ** Navigation
-|-----+----------------------+---------------|
-| Key | Command              | Description   |
-|-----+----------------------+---------------|
-| h   | backward-char        | Move left     |
-| j   | next-line            | Move down     |
-| k   | previous-line        | Move up       |
-| l   | forward-char         | Move right    |
-| w   | mule-right-word      | Forward word  |
-| b   | mule-left-word       | Backward word |
-| W   | mule-forward-symbol  | Forward sexp  |
-| B   | mule-backward-symbol | Backward sexp |
-|-----+----------------------+---------------|
+|-----+----------------------+------------------------------|
+| Key | Command              | Description                  |
+|-----+----------------------+------------------------------|
+| h   | backward-char        | Move left                    |
+| j   | next-line            | Move down                    |
+| k   | previous-line        | Move up                      |
+| l   | forward-char         | Move right                   |
+| w   | mule-right-word      | Forward word                 |
+| b   | mule-left-word       | Backward word                |
+| W   | mule-forward-symbol  | Forward sexp                 |
+| B   | mule-backward-symbol | Backward sexp                |
+| S   | mule-jump-back       | Jump back position (count 5) |
+|     |                      |                              |
+|-----+----------------------+------------------------------|
 
 ** Goto / Scroll
 |-----+--------------------------+-------------------|

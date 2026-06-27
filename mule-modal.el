@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo+
 ;; URL: https://github.com/yardquit/mule-modal
-;; Version: 1.1
+;; Version: 1.2
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/mule-modal
@@ -86,7 +86,64 @@
       (message "*org-scratch* buffer doesn't exist, creating."))))
 
 ;;; ---------------------------------------------------------------------------
-;;; Mule-Enter-DWIM
+;;; Mule Describe Bindings Functions
+;;; ---------------------------------------------------------------------------
+(defun mule--desc-bindings-walk (map prefix)
+  "Helper for mule-describe-bindings: Recursively walk MAP and
+  insert non-prefix keys."
+  (map-keymap
+   (lambda (key def)
+     (let ((full-key (concat prefix (key-description (vector key)))))
+       (when (and (not (eq def 'undefined))
+                  (not (and (listp def) 
+                            (eq (car def) 'remap) 
+                            (eq (cadr def) 'self-insert-command)
+                            (null (cdr (cddr def)))))) 
+         (unless (or (keymapp def)
+                     (and (listp def) (keymapp (cdr def))))
+           (insert (format "%-25s %s\n" full-key
+                           (if (symbolp def) (symbol-name def) "[complex]"))))
+
+         (cond
+          ((keymapp def)
+           (mule--desc-bindings-walk def (concat full-key " ")))
+          ((and (listp def) (keymapp (cdr def)))
+           (mule--desc-bindings-walk (cdr def) (concat full-key " ")))))))
+   map))
+
+(defun mule-describe-bindings ()
+  "Display all *leaf* keybindings in mule-mode-map. Excludes prefix
+    keys from the output list."
+  (interactive)
+  (unless (boundp 'mule-mode-map)
+    (user-error "mule-mode-map is not defined yet"))
+
+  (let ((buf (get-buffer-create "*MULE Bindings*")))
+    (with-current-buffer buf
+      (setq buffer-read-only nil))
+
+    (with-current-buffer buf
+      (erase-buffer)
+
+      (insert "MULE Mode Key Bindings\n")
+      (insert (make-string 40 ?=) "\n\n")
+      (insert (format "%-25s %s\n" "KEY" "COMMAND"))
+      (insert (make-string 48 ?-) "\n")
+
+      (mule--desc-bindings-walk mule-mode-map "")
+
+      (goto-char (point-min))
+      (special-mode)
+      (setq-local buffer-read-only t)
+      (setq-local truncate-lines t)
+      
+      (local-set-key (kbd "q") #'quit-window)
+      (local-set-key (kbd "RET") #'bury-buffer))
+
+    (display-buffer buf)))
+
+;;; ---------------------------------------------------------------------------
+;;; Mule Enter DWIM Functions
 ;;; ---------------------------------------------------------------------------
 (defvar mule-editing-modes
   '(prog-mode text-mode org-mode fundamental-mode conf-mode markdown-mode gfm-mode)
@@ -138,30 +195,65 @@
       (call-interactively follow-cmd))))
 
 ;;; ---------------------------------------------------------------------------
-;;; Helper Functions (Define FIRST so keymap can reference them)
+;;; Mule Comment DWIM Functions
 ;;; ---------------------------------------------------------------------------
-(defun mule--desc-bindings-walk (map prefix)
-  "Helper for mule-describe-bindings: Recursively walk MAP and
-  insert non-prefix keys."
-  (map-keymap
-   (lambda (key def)
-     (let ((full-key (concat prefix (key-description (vector key)))))
-       (when (and (not (eq def 'undefined))
-                  (not (and (listp def) 
-                            (eq (car def) 'remap) 
-                            (eq (cadr def) 'self-insert-command)
-                            (null (cdr (cddr def)))))) 
-         (unless (or (keymapp def)
-                     (and (listp def) (keymapp (cdr def))))
-           (insert (format "%-25s %s\n" full-key
-                           (if (symbolp def) (symbol-name def) "[complex]"))))
+(defun mule--in-org-src-block-p ()
+  "Return non-nil if point is inside an Org source block."
+  (and (eq major-mode 'org-mode)
+       (fboundp 'org-element-at-point)
+       (let ((elem (org-element-at-point)))
+         (and elem (eq (car elem) 'src-block)))))
 
-         (cond
-          ((keymapp def)
-           (mule--desc-bindings-walk def (concat full-key " ")))
-          ((and (listp def) (keymapp (cdr def)))
-           (mule--desc-bindings-walk (cdr def) (concat full-key " ")))))))
-   map))
+(defun mule-comment-dwim ()
+  "Comment/uncomment whole lines in region, or current line if no
+  region. When inside an Org source block, delegates to the block's
+  native major mode via `org-edit-special' for language-aware
+  commenting, then returns to the Org buffer."
+  (interactive)
+  (cond
+   ((mule--in-org-src-block-p)
+    (let ((has-region (use-region-p))
+          (cur-line (line-number-at-pos))
+          (reg-beg-line (when (use-region-p)
+                          (line-number-at-pos (region-beginning))))
+          (reg-end-line (when (use-region-p)
+                          (line-number-at-pos (region-end)))))
+      (condition-case err
+          (progn
+            (org-edit-special)
+            (if has-region
+                (let* ((cur-line-in-edit (line-number-at-pos))
+                       (diff (- cur-line-in-edit cur-line))
+                       (edit-beg-line (+ reg-beg-line diff))
+                       (edit-end-line (+ reg-end-line diff)))
+                  (save-excursion
+                    (goto-char (point-min))
+                    (forward-line (1- edit-beg-line))
+                    (let ((beg (line-beginning-position)))
+                      (forward-line (- edit-end-line edit-beg-line))
+                      (comment-or-uncomment-region
+                       beg (line-beginning-position 2)))))
+              (comment-or-uncomment-region
+               (line-beginning-position)
+               (line-beginning-position 2)))
+            (org-edit-src-exit)
+            (when has-region (deactivate-mark)))
+        (error
+         (message "mule-comment-dwim (org-src): %s"
+                  (error-message-string err))))))
+   (t
+    (if (use-region-p)
+        (let ((beg (save-excursion
+                     (goto-char (region-beginning))
+                     (line-beginning-position)))
+              (end (save-excursion
+                     (goto-char (region-end))
+                     (if (bolp) (point) (line-beginning-position 2)))))
+          (comment-or-uncomment-region beg end))
+      (comment-or-uncomment-region
+       (line-beginning-position)
+       (line-beginning-position 2)))
+    (deactivate-mark))))
 
 (defun mule-goto-line ()
   "Go to line number."
@@ -177,36 +269,10 @@
       (indent-region (region-beginning) (region-end))
     (indent-region (line-beginning-position) (line-end-position))))
 
-(defun mule-describe-bindings ()
-  "Display all *leaf* keybindings in mule-mode-map. Excludes prefix
-  keys from the output list."
+(defun mule-mode-insert ()
+  "Enter insert state (disable mode)."
   (interactive)
-  (unless (boundp 'mule-mode-map)
-    (user-error "mule-mode-map is not defined yet"))
-
-  (let ((buf (get-buffer-create "*MULE Bindings*")))
-    (with-current-buffer buf
-      (setq buffer-read-only nil))
-
-    (with-current-buffer buf
-      (erase-buffer)
-
-      (insert "MULE Mode Key Bindings\n")
-      (insert (make-string 40 ?=) "\n\n")
-      (insert (format "%-25s %s\n" "KEY" "COMMAND"))
-      (insert (make-string 48 ?-) "\n")
-
-      (mule--desc-bindings-walk mule-mode-map "")
-
-      (goto-char (point-min))
-      (special-mode)
-      (setq-local buffer-read-only t)
-      (setq-local truncate-lines t)
-      
-      (local-set-key (kbd "q") #'quit-window)
-      (local-set-key (kbd "RET") #'bury-buffer))
-
-    (display-buffer buf)))
+  (mule-mode 0))
 
 (defun mule-insert-after ()
   "Insert after current char."
@@ -224,11 +290,6 @@
   "Insert at end of line."
   (interactive)
   (move-end-of-line 1)
-  (mule-mode 0))
-
-(defun mule-mode-insert ()
-  "Enter insert state (disable mode)."
-  (interactive)
   (mule-mode 0))
 
 (defun mule-open-below ()
@@ -305,7 +366,7 @@
   (when (region-active-p)
     (fill-region (region-beginning) (region-end))))
 
-(defun mule-move-to-left-margin ()
+(defun mule-move-to-beginning-of-line ()
   "Move to beginning of line."
   (interactive)
   (beginning-of-line))
@@ -315,12 +376,12 @@
   (interactive)
   (move-end-of-line 1))
 
-(defun mule-right-word ()
+(defun mule-forward-word ()
   "Forward word."
   (interactive)
   (forward-word 1))
 
-(defun mule-left-word ()
+(defun mule-backward-word ()
   "Backward word."
   (interactive)
   (backward-word 1))
@@ -334,11 +395,6 @@
   "Backward sexp."
   (interactive)
   (backward-sexp 1))
-
-(defun mule-comment-line ()
-  "Comment/uncomment current line."
-  (interactive)
-  (comment-dwim 1))
 
 (defun mule-switch-other-buffer ()
   "Switch to previous buffer."
@@ -358,7 +414,78 @@
     (downcase-region (region-beginning) (region-end))))
 
 ;;; ---------------------------------------------------------------------------
-;;; Visual Mark Functions
+;;; Mule Jump Back Functions
+;;; ---------------------------------------------------------------------------
+(defcustom mule--position-ring-max 5
+  "Number of position markers retained in the ring."
+  :type 'integer
+  :group 'mule)
+
+(defvar mule--position-ring nil
+  "List of markers recording previous cursor positions, most recent
+  first.")
+
+(defvar mule--position-index 0
+  "Current rotation offset into `mule--position-ring'. 0 = most
+  recent entry. Reset to 0 whenever a new position is recorded.")
+
+(defvar mule--last-tracked-state nil
+  "Cons cell (BUFFER . POINT) captured after the previous command.")
+
+(defun mule--track-position ()
+  "Record previous cursor position when point or buffer changes.
+  Runs on `post-command-hook'. Independent of the mark ring and
+  region."
+  (unless (minibufferp)
+    (let ((now-buf (current-buffer))
+          (now-pt  (point)))
+      (when (and mule--last-tracked-state
+                 (or (not (eq (car mule--last-tracked-state) now-buf))
+                     (/= (cdr mule--last-tracked-state) now-pt)))
+        (let ((m (make-marker)))
+          (set-marker m (cdr mule--last-tracked-state)
+                      (car mule--last-tracked-state))
+          (push m mule--position-ring)
+          (when (> (length mule--position-ring) mule--position-ring-max)
+            (set-marker (car (last mule--position-ring)) nil)
+            (nbutlast mule--position-ring)))
+        (setq mule--position-index 0))
+      (setq mule--last-tracked-state (cons now-buf now-pt)))))
+
+(defun mule-jump-back ()
+  "Rotate to the next stored position in the ring and jump there.
+  Press repeatedly to cycle through the last
+  `mule--position-ring-max' recorded positions. Skips markers whose
+  buffer has been killed."
+  (interactive)
+  (if (null mule--position-ring)
+      (user-error "No positions recorded yet")
+    (let ((ring-len (length mule--position-ring))
+          target skipped)
+      (cl-loop repeat ring-len
+               until target
+               do
+               (setq mule--position-index (1+ mule--position-index))
+               (when (>= mule--position-index ring-len)
+                 (setq mule--position-index 0))
+               (let* ((m (nth mule--position-index mule--position-ring))
+                      (buf (and m (marker-buffer m))))
+                 (if (and buf (> (marker-position m) 0))
+                     (setq target m)
+                   (cl-incf skipped))))
+      (if target
+          (progn
+            (pop-to-buffer (marker-buffer target))
+            (goto-char target)
+            (setq mule--last-tracked-state (cons (current-buffer) (point)))
+            (message "Position %d/%d"
+                     (1+ mule--position-index) ring-len))
+        (user-error "No valid positions in ring")))))
+
+(add-hook 'post-command-hook #'mule--track-position)
+
+;;; ---------------------------------------------------------------------------
+;;; Mark Visual Line Selection Functions
 ;;; ---------------------------------------------------------------------------
   (defvar mule-visual-anchor nil
   "Anchor position for visual line selection.")
@@ -413,19 +540,24 @@
         (activate-mark))
     (forward-line -1)))
 
-  (defun mule-rectangle-mark-mode ()
+(defun mule-rectangle-mark-mode ()
   "Toggle rectangle mark mode."
   (interactive)
   (rectangle-mark-mode 1)
   (right-char 1))
 
-(defun mule-mark-inner (char)
+(defun mule-mark-inner ()
   "Mark text INSIDE CHAR pairs (excluding delimiters)."
-  (interactive (list (read-char "Char ({[<>'\"`): ")))
-  (let ((open-char char)
-        (close-char nil)
-        (start-pos nil)
-        (end-pos nil))
+  (interactive)
+  (let* ((default-char (char-after))
+         (supported-openers '(?\{ ?\[ ?\( ?\< ?\" ?\' ?\`))
+         (on-opener (and default-char (memq default-char supported-openers)))
+         (open-char (if on-opener
+                        default-char
+                      (read-char "Char ({[<>'\"`): ")))
+         (close-char nil)
+         (start-pos nil)
+         (end-pos nil))
 
     (setq close-char
           (cond
@@ -437,14 +569,17 @@
            ((= open-char ?\') ?\')
            ((= open-char ?`) ?`)
            (t
-            (error "Unsupported delimiter '%c'. Use: { [ ( < \" ' `" open-char))))
+            (error "Unsupported delimiter '%c'" open-char))))
 
-    (if (and (char-after) (= (char-after) open-char))
+    ;; If on opener, use point directly; otherwise search backward
+    (if on-opener
         (setq start-pos (point))
-      (condition-case nil
-          (setq start-pos (search-backward (string open-char) nil nil))
-        (search-failed
-         (error "No '%c' found near cursor" open-char))))
+      (if (and (char-after) (= (char-after) open-char))
+          (setq start-pos (point))
+        (condition-case nil
+            (setq start-pos (search-backward (string open-char) nil nil))
+          (search-failed
+           (error "No '%c' found near cursor" open-char)))))
 
     (goto-char (1+ start-pos))
 
@@ -457,19 +592,24 @@
     (goto-char (1- end-pos))
     (activate-mark)
 
-    (when (> (region-beginning) (region-end))
+    (when (>= (region-beginning) (region-end))
       (deactivate-mark)
       (error "Empty selection between %c and %c" open-char close-char))
 
     (message "Selected content for '%c'" open-char)))
 
-(defun mule-mark-outer (char)
+(defun mule-mark-outer ()
   "Mark text INCLUDING CHAR pairs (delimiters included)."
-  (interactive (list (read-char "Char ({[<>'\"`): ")))
-  (let ((open-char char)
-        (close-char nil)
-        (start-pos nil)
-        (end-pos nil))
+  (interactive)
+  (let* ((default-char (char-after))
+         (supported-openers '(?\{ ?\[ ?\( ?\< ?\" ?\' ?\`))
+         (on-opener (and default-char (memq default-char supported-openers)))
+         (open-char (if on-opener
+                        default-char
+                      (read-char "Char ({[<>'\"`): ")))
+         (close-char nil)
+         (start-pos nil)
+         (end-pos nil))
 
     (setq close-char
           (cond
@@ -483,14 +623,16 @@
            (t
             (error "Unsupported delimiter '%c'. Use: { [ ( < ' \" `" open-char))))
 
-    (if (and (char-after) (= (char-after) open-char))
+    (if on-opener
         (setq start-pos (point))
-      (condition-case nil
-          (setq start-pos (search-backward (string open-char) nil nil))
-        (search-failed
-         (error "No '%c' found near cursor" open-char))))
+      (if (and (char-after) (= (char-after) open-char))
+          (setq start-pos (point))
+        (condition-case nil
+            (setq start-pos (search-backward (string open-char) nil nil))
+          (search-failed
+           (error "No '%c' found near cursor" open-char)))))
 
-    (goto-char (1+ start-pos))
+    (goto-char (1+ start-pos))  ;; ← THIS LINE WAS MISSING
 
     (condition-case nil
         (setq end-pos (search-forward (string close-char) nil nil))
@@ -501,7 +643,7 @@
     (goto-char end-pos)
     (activate-mark)
 
-    (when (> (region-beginning) (region-end))
+    (when (>= (region-beginning) (region-end))
       (deactivate-mark)
       (error "Empty selection between %c and %c" open-char close-char))
 
@@ -536,7 +678,7 @@
   (message "Paragraph marked"))
 
 ;;; ---------------------------------------------------------------------------
-;;; MULE MODE KEYMAP DEFINITION
+;;; Mule Mode Keymap Definition
 ;;; ---------------------------------------------------------------------------
 (when (null mule-mode-map)
   (setq mule-mode-map (make-sparse-keymap)))
@@ -566,7 +708,7 @@
 (keymap-set mule-mode-map "c" #'mule-change)
 (keymap-set mule-mode-map "d" #'mule-delete)
 (keymap-set mule-mode-map "x" #'mule-delete)
-(keymap-set mule-mode-map "C" #'mule-comment-line)
+(keymap-set mule-mode-map "C" #'mule-comment-dwim)
 (keymap-set mule-mode-map "C-j" #'join-line)
 
 ;; Yank/Paste
@@ -577,8 +719,9 @@
 ;; Motions
 (keymap-set mule-mode-map "B" #'mule-backward-symbol)
 (keymap-set mule-mode-map "W" #'mule-forward-symbol)
-(keymap-set mule-mode-map "b" #'mule-left-word)
-(keymap-set mule-mode-map "w" #'mule-right-word)
+(keymap-set mule-mode-map "b" #'mule-backward-word)
+(keymap-set mule-mode-map "w" #'mule-forward-word)
+(keymap-set mule-mode-map "S" #'mule-jump-back)
 
 ;; Visual selection
 (keymap-set mule-mode-map "V" #'mule-visual-line-toggle)
@@ -603,7 +746,7 @@
 (keymap-set mule-mode-map "z z" #'recenter-top-bottom)
 (keymap-set mule-mode-map "g e" #'end-of-buffer)
 (keymap-set mule-mode-map "g g" #'beginning-of-buffer)
-(keymap-set mule-mode-map "g h" #'mule-move-to-left-margin)
+(keymap-set mule-mode-map "g h" #'mule-move-to-beginning-of-line)
 (keymap-set mule-mode-map "g l" #'mule-move-to-end-of-line)
 (keymap-set mule-mode-map "g Q" #'mule-fill-paragraph)
 (keymap-set mule-mode-map "g q" #'mule-fill-region)
