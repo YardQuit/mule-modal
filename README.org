@@ -204,7 +204,7 @@ setting, forcing Emacs to use your global default defined by
 | %   | mark-whole-buffer         | Select entire buffer       |
 |-----+---------------------------+----------------------------|
 
-** Mark Objects (m prefix)
+** Mark Objects
 |-----+--------------------------+------------------------------------------|
 | Key | Command                  | Description                              |
 |-----+--------------------------+------------------------------------------|
