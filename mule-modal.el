@@ -47,8 +47,8 @@
 (eval-and-compile
   (declare-function org-open-at-point "org")     ;(mule-enter-dwim)
   (declare-function org-element-at-point "org")  ;(mule-enter-dwim)
-  (declare-function org-open-at-point "org")     ;(mule-comment-dwim)
-  (declare-function org-element-at-point "org")) ;(mule-comment-dwim)
+  (declare-function org-edit-src-exit "org")     ;(mule-comment-dwim)
+  (declare-function org-edit-special "org"))     ;(mule-comment-dwim)
 
 (defvar mule-mode-map nil ;(declaration of mule-mode-map)
   "Keymap for MULE minor mode.")
