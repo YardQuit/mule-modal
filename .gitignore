@@ -20,3 +20,4 @@ dist/
 mule-modal-*.el
 *.bak
 \#*\#
+nohup.out
