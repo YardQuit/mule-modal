@@ -3,9 +3,9 @@
 ;; Copyright (C) 2026 Michael Jones
 ;; Author: Michael Jones <yardquit@pm.me>
 ;; Maintainer: Michael Jones
-;; Assisted-by: Lumo+
+;; Assisted-by: Lumo 2.0 Max
 ;; URL: https://github.com/yardquit/mule-modal
-;; Version: 1.4
+;; Version: 2.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/mule-modal
@@ -29,20 +29,27 @@
 ;; Philosophy: Leverage Emacs Native Commands and built-in functions
 ;; wherever possible. Custom commands only where beneficial.
 ;;
+;; Architecture: Dual-state modal system with permanent activation
+;; - MULE-NORMAL: Modal navigation (h,j,k,l), raw typing blocked
+;; - MULE-INSERT: Passthrough mode, behaves like standard Emacs input
+;;
+;; Fixed faulty ESC in emacs terminal mode, and removed functions
+;; which could be replaced with emacs defaults.
+
+;;
 ;; Warning: May be incompatible with other packages and modal
 ;; editors. This package overrides 'ESC' to manage input states
-;; (MULE/Normal). Loading it alongside other packages that bind
-;; 'ESC' will cause unexpected behavior and state conflicts.
+;; (MULE-NORMAL/MULE-INSERT). Loading it alongside other packages that
+;; bind 'ESC' will cause unexpected behavior and state conflicts.
 
 ;;; Usage:
-;; - Press <escape> to enter ON (Normal) State.
-;; - Press h, j, k, l to navigate left, down, up, right.
-;; - Press i, I, a, A, o, O, c to enter OFF (Insert) State.
-;; - Press V to select lines (extend with j/k or J/K, cancel with V again).
-;; - In ON (Normal) State, raw typing keys are blocked.
+;; - Press <escape> to enter MULE-NORMAL state.
+;; - In NORMAL: h,j,k,l navigate; i,I,a,A,o,O,c enter INSERT state.
+;; - In INSERT: Standard Emacs behavior, press ESC to return to NORMAL.
+;; - State indicators show in modeline: [N] = Normal, [I] = Insert.
 
 ;;; Code:
-(require 'thingatpt) ;; (mule-select-word)
+(require 'thingatpt) ;; (mule-mark-word)
 
 (eval-and-compile
   (declare-function org-open-at-point "org")     ;(mule-enter-dwim)
@@ -50,24 +57,19 @@
   (declare-function org-edit-src-exit "org")     ;(mule-comment-dwim)
   (declare-function org-edit-special "org"))     ;(mule-comment-dwim)
 
-(defvar mule-mode-map nil ;(declaration of mule-mode-map)
-  "Keymap for MULE minor mode.")
-
 ;;; ---------------------------------------------------------------------------
-;;; Buffer Creation Functions
+;;; Org-Scratch Buffer Creation Functions
 ;;; ---------------------------------------------------------------------------
 (defun mule-insert-org-scratch-message ()
   "Insert buffer message"
   (insert
    (substitute-command-keys
-;; start - leave block as it looks.
     (purecopy "\
 # This buffer is for scribbling in org-mode.
 # Start your scribble here and save to file with ‘\\[save-some-buffers]' for persistence.
 
-"))))
-;; end - leave block as it looks.
-(goto-char (point-max))
+")))
+(goto-char (point-max)))
 
 (defun mule-create-org-scratch ()
   "Create an _org-scratch_ buffer."
@@ -92,15 +94,15 @@
 ;;; ---------------------------------------------------------------------------
 (defun mule--desc-bindings-walk (map prefix)
   "Helper for mule-describe-bindings: Recursively walk MAP and
-  insert non-prefix keys."
+insert non-prefix keys."
   (map-keymap
    (lambda (key def)
      (let ((full-key (concat prefix (key-description (vector key)))))
        (when (and (not (eq def 'undefined))
-                  (not (and (listp def) 
-                            (eq (car def) 'remap) 
+                  (not (and (listp def)
+                            (eq (car def) 'remap)
                             (eq (cadr def) 'self-insert-command)
-                            (null (cdr (cddr def)))))) 
+                            (null (cdr (cddr def))))))
          (unless (or (keymapp def)
                      (and (listp def) (keymapp (cdr def))))
            (insert (format "%-25s %s\n" full-key
@@ -114,11 +116,11 @@
    map))
 
 (defun mule-describe-bindings ()
-  "Display all *leaf* keybindings in mule-mode-map. Excludes prefix
-    keys from the output list."
+  "Display all *leaf* keybindings in mule-normal-mode-map. Excludes
+prefix keys from the output list."
   (interactive)
-  (unless (boundp 'mule-mode-map)
-    (user-error "mule-mode-map is not defined yet"))
+  (unless (boundp 'mule-normal-mode-map)
+    (user-error "mule-normal-mode-map is not defined yet"))
 
   (let ((buf (get-buffer-create "*MULE Bindings*")))
     (with-current-buffer buf
@@ -127,18 +129,18 @@
     (with-current-buffer buf
       (erase-buffer)
 
-      (insert "MULE Mode Key Bindings\n")
+      (insert "MULE Normal Mode Key Bindings\n")
       (insert (make-string 40 ?=) "\n\n")
       (insert (format "%-25s %s\n" "KEY" "COMMAND"))
       (insert (make-string 48 ?-) "\n")
 
-      (mule--desc-bindings-walk mule-mode-map "")
+      (mule--desc-bindings-walk mule-normal-mode-map "")
 
       (goto-char (point-min))
       (special-mode)
       (setq-local buffer-read-only t)
       (setq-local truncate-lines t)
-      
+
       (local-set-key (kbd "q") #'quit-window)
       (local-set-key (kbd "RET") #'bury-buffer))
 
@@ -150,7 +152,7 @@
 (defvar mule-editing-modes
   '(prog-mode text-mode org-mode fundamental-mode conf-mode markdown-mode gfm-mode)
   "Major modes where Enter should be blocked to prevent accidental
-  line breaks.")
+line breaks.")
 
 (defun mule--editing-mode-p ()
   "Return non-nil if current major mode is in `mule-editing-modes'."
@@ -178,7 +180,7 @@
 
 (defun mule--non-editing-enter-handler ()
   "Handle Enter in non-editing modes (Info, Dired, etc.):
-  fallthrough."
+fallthrough."
   (unless (mule--editing-mode-p)
     (let ((native-ret (lookup-key (current-local-map) (kbd "RET"))))
       (when (and native-ret
@@ -208,9 +210,9 @@
 
 (defun mule-comment-dwim ()
   "Comment/uncomment whole lines in region, or current line if no
-  region. When inside an Org source block, delegates to the block's
-  native major mode via `org-edit-special' for language-aware
-  commenting, then returns to the Org buffer."
+region. When inside an Org source block, delegates to the block's
+native major mode via `org-edit-special' for language-aware
+commenting, then returns to the Org buffer."
   (interactive)
   (cond
    ((mule--in-org-src-block-p)
@@ -271,58 +273,61 @@
       (indent-region (region-beginning) (region-end))
     (indent-region (line-beginning-position) (line-end-position))))
 
-(defun mule-mode-insert ()
-  "Enter insert state (disable mode)."
-  (interactive)
-  (mule-mode 0))
+(defun mule-enter-insert ()
+  "Switch to INSERT state."
+  (mule-insert-mode 1))
+
+(defun mule-enter-normal ()
+  "Switch to NORMAL state."
+  (mule-normal-mode 1))
 
 (defun mule-insert-after ()
-  "Insert after current char."
+  "Insert after current char - enters INSERT state."
   (interactive)
   (forward-char 1)
-  (mule-mode 0))
+  (mule-enter-insert))
 
 (defun mule-insert-beginning-of-line ()
-  "Insert at beginning of line."
+  "Insert at beginning of line - enters INSERT state."
   (interactive)
   (beginning-of-line)
-  (mule-mode 0))
+  (mule-enter-insert))
 
 (defun mule-insert-end-of-line ()
-  "Insert at end of line."
+  "Insert at end of line - enters INSERT state."
   (interactive)
   (move-end-of-line 1)
-  (mule-mode 0))
+  (mule-enter-insert))
 
 (defun mule-open-below ()
-  "Open a new line below and enter insert state."
+  "Open a new line below and enter INSERT state."
   (interactive)
   (when (region-active-p) (deactivate-mark))
   (move-end-of-line 1)
   (newline-and-indent)
-  (mule-mode 0))
+  (mule-enter-insert))
 
 (defun mule-open-above ()
-  "Open a new line above and enter insert state."
+  "Open a new line above and enter INSERT state."
   (interactive)
   (when (region-active-p) (deactivate-mark))
   (move-beginning-of-line 1)
   (newline-and-indent)
   (forward-line -1)
   (indent-according-to-mode)
-  (mule-mode 0))
+  (mule-enter-insert))
 
 (defun mule-change ()
-  "Change marked char or region."
+  "Change marked char or region - enters INSERT state."
   (interactive)
   (if (use-region-p)
       (progn
         (if (bound-and-true-p rectangle-mark-mode)
             (call-interactively #'string-rectangle)
           (delete-region (mark) (point)))
-        (mule-mode 0))
+        (mule-enter-insert))
     (delete-char 1)
-    (mule-mode 0)))
+    (mule-enter-insert)))
 
 (defun mule-delete ()
   "Delete character or region."
@@ -334,91 +339,15 @@
           (kill-region (mark) (point))))
     (delete-char 1)))
 
-(defun mule-kill-to-end-of-line ()
-  "Kill from point to end of line."
-  (interactive)
-  (kill-line))
-
-(defun mule-yank ()
-  "Yank clipboard content."
-  (interactive)
-  (if (use-region-p)
-      (progn
-        (delete-active-region)
-        (clipboard-yank))
-    (clipboard-yank)))
-
-(defun mule-yank-pop ()
-  "Rotate yanks."
-  (interactive)
-  (if (use-region-p)
-      (progn
-        (delete-active-region)
-        (yank-pop))
-    (yank-pop)))
-
-(defun mule-fill-paragraph ()
-  "Fill current paragraph."
-  (interactive)
-  (fill-paragraph))
-
-(defun mule-fill-region ()
-  "Fill selected region."
-  (interactive)
-  (when (region-active-p)
-    (fill-region (region-beginning) (region-end))))
-
-(defun mule-move-to-beginning-of-line ()
-  "Move to beginning of line."
-  (interactive)
-  (beginning-of-line))
-
-(defun mule-move-to-end-of-line ()
-  "Move to end of line."
-  (interactive)
-  (move-end-of-line 1))
-
-(defun mule-forward-word ()
-  "Forward word."
-  (interactive)
-  (forward-word 1))
-
-(defun mule-backward-word ()
-  "Backward word."
-  (interactive)
-  (backward-word 1))
-
-(defun mule-forward-symbol ()
-  "Forward sexp."
-  (interactive)
-  (forward-sexp 1))
-
-(defun mule-backward-symbol ()
-  "Backward sexp."
-  (interactive)
-  (backward-sexp 1))
-
 (defun mule-switch-other-buffer ()
   "Switch to previous buffer."
   (interactive)
   (switch-to-buffer (other-buffer (current-buffer))))
 
-(defun mule-upcase-region ()
-  "Uppercase region."
-  (interactive)
-  (when (use-region-p)
-    (upcase-region (region-beginning) (region-end))))
-
-(defun mule-downcase-region ()
-  "Lowercase region."
-  (interactive)
-  (when (use-region-p)
-    (downcase-region (region-beginning) (region-end))))
-
 ;;; ---------------------------------------------------------------------------
 ;;; Mule Jump Back Functions
 ;;; ---------------------------------------------------------------------------
-(defcustom mule--position-ring-max 5
+(defcustom mule--position-ring-max 10
   "Number of position markers retained in the ring."
   :type 'integer
   :group 'mule)
@@ -484,12 +413,10 @@
                      (1+ mule--position-index) ring-len))
         (user-error "No valid positions in ring")))))
 
-(add-hook 'post-command-hook #'mule--track-position)
-
 ;;; ---------------------------------------------------------------------------
 ;;; Mark Visual Line Selection Functions
 ;;; ---------------------------------------------------------------------------
-  (defvar mule-visual-anchor nil
+(defvar mule-visual-anchor nil
   "Anchor position for visual line selection.")
 
 (defun mule-visual-line-toggle ()
@@ -693,133 +620,161 @@
   (message "Paragraph marked"))
 
 ;;; ---------------------------------------------------------------------------
-;;; Mule Mode Keymap Definition
+;;; Mule Normal Mode Keymap Definition
 ;;; ---------------------------------------------------------------------------
-(when (null mule-mode-map)
-  (setq mule-mode-map (make-sparse-keymap)))
+(defvar mule-normal-mode-map nil
+  "Keymap for MULE Normal state.")
 
-(suppress-keymap mule-mode-map t)
+(when (null mule-normal-mode-map)
+  (setq mule-normal-mode-map (make-sparse-keymap)))
+
+(suppress-keymap mule-normal-mode-map t)
 
 ;; Navigation
-(keymap-set mule-mode-map "h" #'backward-char)
-(keymap-set mule-mode-map "j" #'next-line)
-(keymap-set mule-mode-map "k" #'previous-line)
-(keymap-set mule-mode-map "l" #'forward-char)
+(keymap-set mule-normal-mode-map "h" #'backward-char)
+(keymap-set mule-normal-mode-map "j" #'next-line)
+(keymap-set mule-normal-mode-map "k" #'previous-line)
+(keymap-set mule-normal-mode-map "l" #'forward-char)
 
 ;; Visual Line Extension
-(keymap-set mule-mode-map "J" #'mule-visual-next-line)
-(keymap-set mule-mode-map "K" #'mule-visual-previous-line)
+(keymap-set mule-normal-mode-map "J" #'mule-visual-next-line)
+(keymap-set mule-normal-mode-map "K" #'mule-visual-previous-line)
 
 ;; Insert mode entry
-(keymap-set mule-mode-map "A" #'mule-insert-end-of-line)
-(keymap-set mule-mode-map "I" #'mule-insert-beginning-of-line)
-(keymap-set mule-mode-map "O" #'mule-open-above)
-(keymap-set mule-mode-map "a" #'mule-insert-after)
-(keymap-set mule-mode-map "i" #'mule-mode-insert)
-(keymap-set mule-mode-map "o" #'mule-open-below)
+(keymap-set mule-normal-mode-map "A" #'mule-insert-end-of-line)
+(keymap-set mule-normal-mode-map "I" #'mule-insert-beginning-of-line)
+(keymap-set mule-normal-mode-map "O" #'mule-open-above)
+(keymap-set mule-normal-mode-map "a" #'mule-insert-after)
+(keymap-set mule-normal-mode-map "i" #'mule-insert-mode)
+(keymap-set mule-normal-mode-map "o" #'mule-open-below)
 
 ;; Editing operations
-(keymap-set mule-mode-map "D" #'mule-kill-to-end-of-line)
-(keymap-set mule-mode-map "c" #'mule-change)
-(keymap-set mule-mode-map "d" #'mule-delete)
-(keymap-set mule-mode-map "x" #'mule-delete)
-(keymap-set mule-mode-map "C" #'mule-comment-dwim)
-(keymap-set mule-mode-map "C-j" #'join-line)
+(keymap-set mule-normal-mode-map "D" #'kill-line)
+(keymap-set mule-normal-mode-map "c" #'mule-change)
+(keymap-set mule-normal-mode-map "d" #'mule-delete)
+(keymap-set mule-normal-mode-map "x" #'mule-delete)
+(keymap-set mule-normal-mode-map "C" #'mule-comment-dwim)
+(keymap-set mule-normal-mode-map "C-j" #'join-line)
 
 ;; Yank/Paste
-(keymap-set mule-mode-map "P" #'mule-yank-pop)
-(keymap-set mule-mode-map "p" #'mule-yank)
-(keymap-set mule-mode-map "y" #'kill-ring-save)
+(keymap-set mule-normal-mode-map "P" #'yank-pop)
+(keymap-set mule-normal-mode-map "p" #'yank)
+(keymap-set mule-normal-mode-map "y" #'kill-ring-save)
 
 ;; Motions
-(keymap-set mule-mode-map "B" #'mule-backward-symbol)
-(keymap-set mule-mode-map "W" #'mule-forward-symbol)
-(keymap-set mule-mode-map "b" #'mule-backward-word)
-(keymap-set mule-mode-map "w" #'mule-forward-word)
-(keymap-set mule-mode-map "S" #'mule-jump-back)
+(keymap-set mule-normal-mode-map "B" #'backward-sexp)
+(keymap-set mule-normal-mode-map "W" #'forward-sexp)
+(keymap-set mule-normal-mode-map "b" #'backward-word)
+(keymap-set mule-normal-mode-map "w" #'forward-word)
+(keymap-set mule-normal-mode-map "S" #'mule-jump-back)
 
 ;; Visual selection
-(keymap-set mule-mode-map "V" #'mule-visual-line-toggle)
-(keymap-set mule-mode-map "v" #'set-mark-command)
+(keymap-set mule-normal-mode-map "V" #'mule-visual-line-toggle)
+(keymap-set mule-normal-mode-map "v" #'set-mark-command)
 
 ;; Mark objects
-(keymap-set mule-mode-map "m a" #'mule-mark-outer)
-(keymap-set mule-mode-map "m i" #'mule-mark-inner)
-(keymap-set mule-mode-map "m p" #'mule-mark-paragraph)
-(keymap-set mule-mode-map "m s" #'mule-mark-sentence)
-(keymap-set mule-mode-map "m v" #'mule-rectangle-mark-mode)
-(keymap-set mule-mode-map "m w" #'mule-mark-word)
+(keymap-set mule-normal-mode-map "m a" #'mule-mark-outer)
+(keymap-set mule-normal-mode-map "m i" #'mule-mark-inner)
+(keymap-set mule-normal-mode-map "m p" #'mule-mark-paragraph)
+(keymap-set mule-normal-mode-map "m s" #'mule-mark-sentence)
+(keymap-set mule-normal-mode-map "m v" #'mule-rectangle-mark-mode)
+(keymap-set mule-normal-mode-map "m w" #'mule-mark-word)
 
 ;; Buffer navigation
-(keymap-set mule-mode-map "%" #'mark-whole-buffer)
-(keymap-set mule-mode-map "." #'repeat)
-(keymap-set mule-mode-map ":" #'mule-goto-line)
-(keymap-set mule-mode-map ">" #'mule-indent-region-or-line)
-(keymap-set mule-mode-map "?" #'mule-describe-bindings)
-(keymap-set mule-mode-map "U" #'undo-redo)
-(keymap-set mule-mode-map "u" #'undo)
-(keymap-set mule-mode-map "z z" #'recenter-top-bottom)
-(keymap-set mule-mode-map "g e" #'end-of-buffer)
-(keymap-set mule-mode-map "g g" #'beginning-of-buffer)
-(keymap-set mule-mode-map "g h" #'mule-move-to-beginning-of-line)
-(keymap-set mule-mode-map "g l" #'mule-move-to-end-of-line)
-(keymap-set mule-mode-map "g Q" #'mule-fill-paragraph)
-(keymap-set mule-mode-map "g q" #'mule-fill-region)
-(keymap-set mule-mode-map "g t" #'beginning-of-buffer)
+(keymap-set mule-normal-mode-map "%" #'mark-whole-buffer)
+(keymap-set mule-normal-mode-map "." #'repeat)
+(keymap-set mule-normal-mode-map ":" #'mule-goto-line)
+(keymap-set mule-normal-mode-map ">" #'mule-indent-region-or-line)
+(keymap-set mule-normal-mode-map "?" #'mule-describe-bindings)
+(keymap-set mule-normal-mode-map "U" #'undo-redo)
+(keymap-set mule-normal-mode-map "u" #'undo)
+(keymap-set mule-normal-mode-map "z z" #'recenter-top-bottom)
+(keymap-set mule-normal-mode-map "g e" #'end-of-buffer)
+(keymap-set mule-normal-mode-map "g g" #'beginning-of-buffer)
+(keymap-set mule-normal-mode-map "g h" #'beginning-of-line)
+(keymap-set mule-normal-mode-map "g l" #'move-end-of-line)
+(keymap-set mule-normal-mode-map "g Q" #'fill-paragraph)
+(keymap-set mule-normal-mode-map "g q" #'fill-region)
+(keymap-set mule-normal-mode-map "g t" #'beginning-of-buffer)
 
 ;; Search/Replace (Multi-key)
-(keymap-set mule-mode-map "r r" #'replace-regexp)
-(keymap-set mule-mode-map "r q" #'query-replace)
+(keymap-set mule-normal-mode-map "r r" #'replace-regexp)
+(keymap-set mule-normal-mode-map "r q" #'query-replace)
 
 ;; Enter/Return Key (Context Aware)
-(keymap-set mule-mode-map "<enter>" #'mule-enter-dwim)
-(keymap-set mule-mode-map "RET" #'mule-enter-dwim)
+(keymap-set mule-normal-mode-map "<enter>" #'mule-enter-dwim)
+(keymap-set mule-normal-mode-map "RET" #'mule-enter-dwim)
 
-;; IGNORE typing/blocking keys
-(keymap-set mule-mode-map "<backspace>" #'ignore)
-(keymap-set mule-mode-map "<delete>" #'ignore)
-(keymap-set mule-mode-map "," #'ignore)
-(keymap-set mule-mode-map "-" #'ignore)
-(keymap-set mule-mode-map "/" #'ignore)
-(keymap-set mule-mode-map ";" #'ignore)
-(keymap-set mule-mode-map "_" #'ignore)
+;; Block raw typing keys in NORMAL state
+(keymap-set mule-normal-mode-map "<backspace>" #'ignore)
+(keymap-set mule-normal-mode-map "<delete>" #'ignore)
+(keymap-set mule-normal-mode-map "," #'ignore)
+(keymap-set mule-normal-mode-map "-" #'ignore)
+(keymap-set mule-normal-mode-map "/" #'ignore)
+(keymap-set mule-normal-mode-map ";" #'ignore)
+(keymap-set mule-normal-mode-map "_" #'ignore)
 
 ;;; ---------------------------------------------------------------------------
-;;; Mode Definition
+;;; Mule Insert Mode Keymap Definition
 ;;; ---------------------------------------------------------------------------
-(define-minor-mode mule-mode
-  "Opinionated Modal Editing - Normal State Navigation.
-              Each buffer maintains its own mule-mode state independently."
+(defvar mule-insert-mode-map nil
+  "Keymap for MULE Insert state. Intentionally minimal: all keys
+  fall through to the major mode and global map, providing
+  unmodified Emacs behavior. The global ESC handler manages the
+  transition back to Normal state.")
+
+(when (null mule-insert-mode-map)
+  (setq mule-insert-mode-map (make-sparse-keymap)))
+
+;; No key bindings here. The keymap is empty so that every key
+;; passes through to the active major mode and global keymap,
+;; replicating standard Emacs input behavior. The global ESC
+;; handler (bound via global-set-key) intercepts ESC to return
+;; to Normal state.
+
+;;; ---------------------------------------------------------------------------
+;;; Mule Mode Definitions
+;;; ---------------------------------------------------------------------------
+(define-minor-mode mule-normal-mode
+  "MULE Normal state - modal navigation and editing.
+Each buffer maintains its own MULE state independently. When
+enabled, `mule-insert-mode' is automatically disabled and
+vice versa."
   :group 'mule
-  :lighter " MULE"
-  :keymap mule-mode-map)
+  :lighter " MULE[N]"
+  :keymap mule-normal-mode-map
+  (when mule-normal-mode
+    (when (bound-and-true-p mule-insert-mode)
+      (mule-insert-mode -1))))
 
-;;; ---------------------------------------------------------------------------
-;;; Global Escape Binding
-;;; ---------------------------------------------------------------------------
-(global-set-key [escape]
-                (lambda ()
-                  (interactive)
-                  (cond
-                   ((minibufferp) (keyboard-quit))
-                   (mule-mode (keyboard-quit))
-                   (t (mule-mode 1)))))
+(define-minor-mode mule-insert-mode
+  "MULE Insert state - passthrough to standard Emacs input.
+All keys fall through to the major mode and global keymap.
+Press ESC to return to Normal state."
+  :group 'mule
+  :lighter " MULE[I]"
+  :keymap mule-insert-mode-map
+  (when mule-insert-mode
+    (when (bound-and-true-p mule-normal-mode)
+      (mule-normal-mode -1))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Cursor Management (Per-Buffer, Enforced via Hook)
 ;;; ---------------------------------------------------------------------------
 (defcustom mule-cursor-normal 'box
   "Cursor shape when MULE Normal state is active. Set to nil to fall
-  back to global `cursor-type', otherwise must be a valid cursor
-  type symbol or cons cell."
-  :type '(choice (const box) (const bar) (const hollow) (cons symbol integer) (const :tag "Use Global Default" nil))
+back to global `cursor-type'."
+  :type '(choice (const box) (const bar) (const hollow)
+                 (cons symbol integer)
+                 (const :tag "Use Global Default" nil))
   :group 'mule)
 
 (defcustom mule-cursor-insert '(bar . 2)
-  "Cursor shape when MULE is inactive (Insert state). Set to nil to
-  fall back to global `cursor-type', otherwise must be a valid
-  cursor type symbol or cons cell."
-  :type '(choice (const box) (const bar) (const hollow) (cons symbol integer) (const :tag "Use Global Default" nil))
+  "Cursor shape when MULE Insert state is active. Set to nil to fall
+back to global `cursor-type'."
+  :type '(choice (const box) (const bar) (const hollow)
+                 (cons symbol integer)
+                 (const :tag "Use Global Default" nil))
   :group 'mule)
 
 (defun mule--apply-cursor-setting (setting)
@@ -829,103 +784,195 @@
     (kill-local-variable 'cursor-type)))
 
 (defun mule--update-cursor ()
-  "Update cursor based on current mode state and custom variables."
-  (if (and (boundp 'mule-mode) mule-mode)
-      (mule--apply-cursor-setting mule-cursor-normal)
-    (mule--apply-cursor-setting mule-cursor-insert)))
+  "Update cursor based on current MULE state."
+  (cond
+   ((bound-and-true-p mule-normal-mode)
+    (mule--apply-cursor-setting mule-cursor-normal))
+   ((bound-and-true-p mule-insert-mode)
+    (mule--apply-cursor-setting mule-cursor-insert))
+   (t
+    (mule--apply-cursor-setting nil))))
 
-(add-hook 'mule-mode-hook #'mule--update-cursor)
+(add-hook 'mule-normal-mode-hook #'mule--update-cursor)
+(add-hook 'mule-insert-mode-hook #'mule--update-cursor)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Minibuffer Safety
 ;;; ---------------------------------------------------------------------------
-(defvar mule--minibuffer-state nil
-  "Track whether mule-mode was active before entering minibuffer.")
+(defvar mule--minibuffer-pre-state nil
+  "Track MULE state before entering minibuffer.
+Value is 'normal, 'insert, or nil. Not buffer-local because we
+need to read it after switching buffers.")
+
+(defun mule--minibuffer-current-state ()
+  "Return the current MULE state as a symbol."
+  (cond
+   ((bound-and-true-p mule-normal-mode) 'normal)
+   ((bound-and-true-p mule-insert-mode) 'insert)
+   (t nil)))
 
 (add-hook 'minibuffer-setup-hook
-          (lambda ()
-            (setq mule--minibuffer-state mule-mode)
-            (when mule-mode
-              (mule-mode -1))))
+        (lambda ()
+          ;; Capture state from the buffer that initiated the minibuffer
+          (let ((orig-state
+                 (with-current-buffer
+                     (window-buffer (minibuffer-selected-window))
+                   (mule--minibuffer-current-state))))
+            (setq mule--minibuffer-pre-state orig-state))
+          ;; Force insert mode (passthrough) in the minibuffer itself
+          (when (bound-and-true-p mule-normal-mode)
+            (mule-normal-mode -1))
+          ;; Bind ESC in the minibuffer's local keymap so terminal ESC
+          ;; reaches our handler instead of falling through to esc-map
+          (local-set-key (kbd "ESC") #'mule--esc-insert)))
 
 (add-hook 'minibuffer-exit-hook
           (lambda ()
-            (when mule--minibuffer-state
-              (mule-mode 1)
-              (setq mule--minibuffer-state nil))))
+            ;; Restore state in the originating buffer
+            (with-current-buffer
+                (window-buffer (minibuffer-selected-window))
+              (pcase mule--minibuffer-pre-state
+                ('normal (mule-enter-normal))
+                ('insert (mule-enter-insert))))
+            (setq mule--minibuffer-pre-state nil)))
+
+;;; ---------------------------------------------------------------------------
+;;; Global Escape Binding
+;;; ---------------------------------------------------------------------------
+(defcustom mule-esc-delay 0.01
+  "Seconds to wait for additional input after ESC before treating it
+as a standalone key."
+  :type 'float
+  :group 'mule)
+
+(defun mule--escape-handler ()
+  "Handle <escape> key in GUI mode (native event, no disambiguation
+needed)."
+  (interactive)
+  (let ((inhibit-quit t))
+    (cond
+     ((minibuffer-window-active-p (minibuffer-window))
+      (abort-recursive-edit))
+     ((not (bound-and-true-p mule-modal))
+      (keyboard-escape-quit))
+     (mule-normal-mode
+      (keyboard-quit))
+     (t
+      (mule-enter-normal)
+      (keyboard-quit)))))
+
+(defun mule--esc-insert ()
+  "Handle terminal ESC in insert state.
+Mirrors Evil's `evil-esc': uses `sit-for' to distinguish standalone
+ESC from Meta keys and escape sequences. When more input follows,
+switches to normal state FIRST (removing the ESC binding), then
+pushes ?\\e back so it falls through to esc-map as a Meta prefix.
+This prevents the infinite loop that occurs when ?\\e is pushed
+back while still in insert state."
+  (interactive)
+  (let ((inhibit-quit t))
+    (cond
+     ((minibufferp)
+      (abort-recursive-edit))
+     ((sit-for mule-esc-delay)
+      (mule-enter-normal)
+      (keyboard-quit))
+     (t
+      (mule-enter-normal)
+      (push ?\e unread-command-events)))))
+
+;; GUI: native <escape> event (separate from Meta, no disambiguation)
+(global-set-key [escape] #'mule--escape-handler)
+
+;; Terminal: bind ESC in INSERT mode keymap ONLY.
+;; Normal mode does NOT bind ESC — it falls through to esc-map as a
+;; Meta prefix, so M-x, M-d, arrows, etc. work from normal state.
+(define-key mule-insert-mode-map (kbd "ESC") #'mule--esc-insert)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Exclusion Mode Safeguards
 ;;; ---------------------------------------------------------------------------
-;; Explicitly disable mule-mode AND reset cursor for known incompatible modes.
-;; This is a defense-in-depth measure alongside after-change-major-mode-hook filtering.
 (defvar mule--excluded-modes
   '(ibuffer-mode eshell-mode term-mode vterm-mode dired-mode comint-mode magit-status-mode)
-  "Major modes where mule-mode should be permanently disabled.
-
-These modes are checked using both DERIVED-MODE-P and direct
-MAJOR-MODE comparison in `mule--ensure-default-state' to catch edge
-cases where one method might fail.")
+  "Major modes where MULE Normal state should be permanently
+disabled. In these modes, MULE Insert state (passthrough) is
+used instead, keeping MULE active but non-interfering.")
 
 (dolist (mode mule--excluded-modes)
   (let ((hook (intern (format "%s-hook" mode))))
     (when (boundp hook)
-      (add-hook hook 
-                (lambda () 
-                  (when (bound-and-true-p mule-mode)
-                    (mule-mode -1)
-                    (kill-local-variable 'cursor-type)))
+      (add-hook hook
+                (lambda ()
+                  (when (bound-and-true-p mule-normal-mode)
+                    (mule-enter-insert)))
                 -10))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Enhanced Mode Activation Logic
 ;;; ---------------------------------------------------------------------------
 (defun mule--ensure-default-state ()
-  "Enable mule-mode unless the current major mode is excluded.
+  "Enable MULE Normal state unless the current major mode is
+excluded. For excluded modes, enable MULE Insert state
+(passthrough) instead.
 
-Uses two independent checks for maximum reliability:
-1. Derived-mode check (handles mode hierarchies)
-2. Direct mode symbol check (handles exact matches)
-
-Returns non-nil if mule-mode was enabled."
+Returns non-nil if MULE was enabled."
   (let ((is-excluded-p
          (or (memq major-mode mule--excluded-modes)
              (apply #'derived-mode-p mule--excluded-modes))))
-    (unless (or mule-mode is-excluded-p)
-      (mule-mode 1)
-      t)))
-
-(add-hook 'after-change-major-mode-hook #'mule--ensure-default-state)
-
-;;; ---------------------------------------------------------------------------
-;;; Minibuffer Safety (Ensures no cursor conflicts during prompts)
-;;; ---------------------------------------------------------------------------
-(defvar mule--minibuffer-pre-mule-state nil
-  "Track whether mule-mode was active before entering minibuffer.")
-
-(add-hook 'minibuffer-setup-hook
-          (lambda ()
-            ;; Store state before disabling
-            (setq mule--minibuffer-pre-mule-state mule-mode)
-            ;; Disable mule-mode in minibuffer (incompatible with input)
-            (when mule-mode
-              (mule-mode -1))))
-
-(add-hook 'minibuffer-exit-hook
-          (lambda ()
-            ;; Restore previous state
-            (when mule--minibuffer-pre-mule-state
-              (mule-mode 1))
-            (setq mule--minibuffer-pre-mule-state nil)))
+    (cond
+     (is-excluded-p
+      (unless (bound-and-true-p mule-insert-mode)
+        (mule-enter-insert)
+        t))
+     (t
+      (unless (or (bound-and-true-p mule-normal-mode)
+                  (bound-and-true-p mule-insert-mode))
+        (mule-enter-normal)
+        t)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mode Indicator
 ;;; ---------------------------------------------------------------------------
 (defun mule-indicator ()
-  "Return ' MULE' if mule-mode is active, otherwise empty string."
-  (if (bound-and-true-p mule-mode)
-      " MULE"
-    "     "))
+  "Return state indicator string for modeline.
+Returns ' MULE[N]' for Normal, ' MULE[I]' for Insert, empty string
+otherwise. Useful if you build your own mode-line and want to
+include the MULE state."
+  (cond
+   ((bound-and-true-p mule-normal-mode) " MULE[N]")
+   ((bound-and-true-p mule-insert-mode) " MULE[I]")
+   (t "")))
+
+;;; ---------------------------------------------------------------------------
+;;; Global Mode Toggle
+;;; ---------------------------------------------------------------------------
+(define-minor-mode mule-modal
+  "Toggle MULE Modal Editing globally.
+
+When enabled, MULE activates its dual-state system (Normal/Insert) in
+all buffers. Buffers whose major mode is in `mule--excluded-modes'
+fall back to Insert state (passthrough). When disabled, all MULE state
+is cleared from every buffer and standard Emacs behavior is restored.
+
+\\[mule-modal] or `M-x mule-modal' to toggle."
+  :global t
+  :group 'mule
+  (if mule-modal
+      (progn
+        (add-hook 'after-change-major-mode-hook #'mule--ensure-default-state)
+        (add-hook 'post-command-hook #'mule--track-position)
+        (dolist (buf (buffer-list))
+          (with-current-buffer buf
+            (mule--ensure-default-state))))
+    (remove-hook 'after-change-major-mode-hook #'mule--ensure-default-state)
+    (remove-hook 'post-command-hook #'mule--track-position)
+    (dolist (buf (buffer-list))
+      (with-current-buffer buf
+        (when (bound-and-true-p mule-normal-mode)
+          (mule-normal-mode -1))
+        (when (bound-and-true-p mule-insert-mode)
+          (mule-insert-mode -1))
+        (mule--apply-cursor-setting nil)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Provide
