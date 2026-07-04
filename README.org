@@ -23,15 +23,13 @@ add the following to your init.el or config.el:
 
 #+begin_src emacs-lisp
 
-  (let ((mule-path (expand-file-name "~/.config/emacs/mule-modal/mule-modal.el" user-emacs-directory)))
-  (if (file-exists-p mule-path)
-      (progn
+    (let ((mule-path (expand-file-name "~/.config/emacs/mule-modal/mule-modal.el"
+                                     user-emacs-directory)))
+    (if (file-exists-p mule-path)
         (load mule-path nil t)
-        ;; Activate mule-mode in buffers that already exist
-        (dolist (buf (buffer-list))
-          (with-current-buffer buf
-            (mule--ensure-default-state))))
-    (message "WARNING: Mule modal module not found at %s. Some keybindings may fail." mule-path)))
+      (message "WARNING: Mule modal module not found at %s." mule-path)))
+
+  (mule-modal 1)
 
 #+end_src
 
@@ -123,115 +121,115 @@ setting, forcing Emacs to use your global default defined by
 * Key Reference
 
 ** Entering Insert State
-|-----+-------------------------------+-------------------------------|
-| Key | Command                       | Description                   |
-|-----+-------------------------------+-------------------------------|
-| i   | mule-mode-insert              | Enter insert at point         |
-| I   | mule-insert-beginning-of-line | Insert at beginning of line   |
-| a   | mule-insert-after             | Insert after current char     |
-| A   | mule-insert-end-of-line       | Insert at end of line         |
-| o   | mule-open-below               | Open line below, enter insert |
-| O   | mule-open-above               | Open line above, enter insert |
-|-----+-------------------------------+-------------------------------|
+|-----+-------------------------------|
+| Key | Description                   |
+|-----+-------------------------------|
+| i   | Enter insert at point         |
+| I   | Insert at beginning of line   |
+| a   | Insert after current char     |
+| A   | Insert at end of line         |
+| o   | Open line below, enter insert |
+| O   | Open line above, enter insert |
+|-----+-------------------------------|
 
 ** Navigation
-|-----+----------------------+------------------------------|
-| Key | Command              | Description                  |
-|-----+----------------------+------------------------------|
-| h   | backward-char        | Move left                    |
-| j   | next-line            | Move down                    |
-| k   | previous-line        | Move up                      |
-| l   | forward-char         | Move right                   |
-| w   | mule-forward-word    | Forward word                 |
-| b   | mule-backward-word   | Backward word                |
-| W   | mule-forward-symbol  | Forward sexp                 |
-| B   | mule-backward-symbol | Backward sexp                |
-| S   | mule-jump-back       | Jump back position (count 5) |
-|-----+----------------------+------------------------------|
+|-----+------------------------------|
+| Key | Description                  |
+|-----+------------------------------|
+| h   | Move left                    |
+| j   | Move down                    |
+| k   | Move up                      |
+| l   | Move right                   |
+| w   | Forward word                 |
+| b   | Backward word                |
+| W   | Forward sexp                 |
+| B   | Backward sexp                |
+| S   | Jump back position (count 5) |
+|-----+------------------------------|
 
 ** Goto / Scroll
-|-----+--------------------------------+-------------------|
-| Key | Command                        | Description       |
-|-----+--------------------------------+-------------------|
-| g g | beginning-of-buffer            | Jump to top       |
-| g t | beginning-of-buffer            | Jump to top (alt) |
-| g e | end-of-buffer                  | Jump to bottom    |
-| g h | mule-move-to-beginning-of-line | Beginning of line |
-| g l | mule-move-to-end-of-line       | End of line       |
-| :   | mule-goto-line                 | Go to line number |
-| z z | recenter-top-bottom            | Recenter screen   |
-|-----+--------------------------------+-------------------|
+|-----+-------------------|
+| Key | Description       |
+|-----+-------------------|
+| g g | Jump to top       |
+| g t | Jump to top (alt) |
+| g e | Jump to bottom    |
+| g h | Beginning of line |
+| g l | End of line       |
+| :   | Go to line number |
+| z z | Recenter screen   |
+|-----+-------------------|
 
 ** Editing
-|-----+----------------------------+-----------------------------|
-| Key | Command                    | Description                 |
-|-----+----------------------------+-----------------------------|
-| d   | mule-delete                | Delete char or region       |
-| x   | mule-delete                | Delete char or region (alt) |
-| D   | mule-kill-to-end-of-line   | Kill to end of line         |
-| c   | mule-change                | Delete and enter insert     |
-| C   | mule-comment-dwim          | Comment/uncomment line      |
-| C-j | join-line                  | Join current with next      |
-| >   | mule-indent-region-or-line | Indent region or line       |
-|-----+----------------------------+-----------------------------|
+|-----+-----------------------------|
+| Key | Description                 |
+|-----+-----------------------------|
+| d   | Delete char or region       |
+| x   | Delete char or region (alt) |
+| D   | Kill to end of line         |
+| c   | Delete and enter insert     |
+| C   | Comment/uncomment line      |
+| C-j | Join current with next      |
+| >   | Indent region or line       |
+|-----+-----------------------------|
 
 ** Kill / Yank
-|-----+----------------+--------------------------|
-| Key | Command        | Description              |
-|-----+----------------+--------------------------|
-| y   | kill-ring-save | Copy (save to kill ring) |
-| p   | mule-yank      | Paste from clipboard     |
-| P   | mule-yank-pop  | Rotate through kill ring |
-|-----+----------------+--------------------------|
+|-----+--------------------------|
+| Key | Description              |
+|-----+--------------------------|
+| y   | Copy (save to kill ring) |
+| p   | Paste from clipboard     |
+| P   | Rotate through kill ring |
+|-----+--------------------------|
 
 ** Undo
-|-----+----------------+-------------|
-| Key | Command        | Description |
-|-----+----------------+-------------|
-| u   | undo           | Undo        |
-| U   | mule-undo-redo | Redo        |
-|-----+----------------+-------------|
+|-----+-------------|
+| Key | Description |
+|-----+-------------|
+| u   | Undo        |
+| U   | Redo        |
+|-----+-------------|
 
 ** Visual Selection
-|-----+---------------------------+----------------------------|
-| Key | Command                   | Description                |
-|-----+---------------------------+----------------------------|
-| v   | set-mark-command          | Set mark (character-wise)  |
-| V   | mule-visual-line-toggle   | Toggle line-wise selection |
-| J   | mule-visual-next-line     | Extend selection downward  |
-| K   | mule-visual-previous-line | Extend selection upward    |
-| %   | mark-whole-buffer         | Select entire buffer       |
-|-----+---------------------------+----------------------------|
+|-----+----------------------------|
+| Key | Description                |
+|-----+----------------------------|
+| v   | Set mark (character-wise)  |
+| V   | Toggle line-wise selection |
+| J   | Extend selection downward  |
+| K   | Extend selection upward    |
+| %   | Select entire buffer       |
+|-----+----------------------------|
 
 ** Mark Objects
-|-----+--------------------------+------------------------------------------|
-| Key | Command                  | Description                              |
-|-----+--------------------------+------------------------------------------|
-| m i | mule-mark-inner          | Select inside delimiters (exclude chars) |
-| m a | mule-mark-outer          | Select around delimiters (include chars) |
-| m w | mule-mark-word           | Select word at point                     |
-| m s | mule-mark-sentence       | Select sentence at point                 |
-| m p | mule-mark-paragraph      | Select paragraph at point                |
-| m v | mule-rectangle-mark-mode | Rectangle selection                      |
-|-----+--------------------------+------------------------------------------|
+|-----+-------------------------------------------------|
+| Key | Description                                     |
+|-----+-------------------------------------------------|
+| m i | Simple select inside delimiters (exclude chars) |
+| m a | Simple select around delimiters (include chars) |
+| m w | Select word at point                            |
+| m s | Select sentence at point                        |
+| m p | Select paragraph at point                       |
+| m v | Rectangle selection                             |
+|-----+-------------------------------------------------|
 
 ** Search / Replace
-|-----+----------------+---------------------|
-| Key | Command        | Description         |
-|-----+----------------+---------------------|
-| r q | query-replace  | Interactive replace |
-| r r | replace-regexp | Regexp replace      |
-|-----+----------------+---------------------|
+|-----+---------------------|
+| Key | Description         |
+|-----+---------------------|
+| r q | Interactive replace |
+| r r | Regexp replace      |
+|-----+---------------------|
 
 ** Miscellaneous
-|-----+------------------------+--------------------------------|
-| Key | Command                | Description                    |
-|-----+------------------------+--------------------------------|
-| ?   | mule-describe-bindings | Show all mule-mode keybindings |
-| .   | repeat                 | Repeat last command            |
-| g q | mule-fill-region       | Fill selected region           |
-| g Q | mule-fill-paragraph    | Fill current paragraph         |
-|-----+------------------------+--------------------------------|
+|-----+--------------------------------|
+| Key | Description                    |
+|-----+--------------------------------|
+| ?   | Show all mule-mode keybindings |
+| .   | Repeat last command            |
+| g q | Fill selected region           |
+| g Q | Fill current paragraph         |
+|-----+--------------------------------|
 
 
 * Org-Scratch Buffer
