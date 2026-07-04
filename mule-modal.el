@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo 2.0 Max
 ;; URL: https://github.com/yardquit/mule-modal
-;; Version: 2.0
+;; Version: 2.1
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/mule-modal
@@ -28,15 +28,7 @@
 ;;; Commentary:
 ;; Philosophy: Leverage Emacs Native Commands and built-in functions
 ;; wherever possible. Custom commands only where beneficial.
-;;
-;; Architecture: Dual-state modal system with permanent activation
-;; - MULE-NORMAL: Modal navigation (h,j,k,l), raw typing blocked
-;; - MULE-INSERT: Passthrough mode, behaves like standard Emacs input
-;;
-;; Fixed faulty ESC in emacs terminal mode, and removed functions
-;; which could be replaced with emacs defaults.
 
-;;
 ;; Warning: May be incompatible with other packages and modal
 ;; editors. This package overrides 'ESC' to manage input states
 ;; (MULE-NORMAL/MULE-INSERT). Loading it alongside other packages that
@@ -55,7 +47,9 @@
   (declare-function org-open-at-point "org")     ;(mule-enter-dwim)
   (declare-function org-element-at-point "org")  ;(mule-enter-dwim)
   (declare-function org-edit-src-exit "org")     ;(mule-comment-dwim)
-  (declare-function org-edit-special "org"))     ;(mule-comment-dwim)
+  (declare-function org-edit-special "org")      ;(mule-comment-dwim)
+  (defvar mule-normal-mode-map nil)
+  (defvar mule-insert-mode-map nil))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Org-Scratch Buffer Creation Functions
@@ -801,7 +795,7 @@ back to global `cursor-type'."
 ;;; ---------------------------------------------------------------------------
 (defvar mule--minibuffer-pre-state nil
   "Track MULE state before entering minibuffer.
-Value is 'normal, 'insert, or nil. Not buffer-local because we
+Value is `normal', `insert', or nil. Not buffer-local because we
 need to read it after switching buffers.")
 
 (defun mule--minibuffer-current-state ()
