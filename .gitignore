@@ -21,3 +21,4 @@ mule-modal-*.el
 *.bak
 \#*\#
 nohup.out
+*__*.org

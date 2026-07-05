@@ -29,19 +29,14 @@
 ;; Philosophy: Leverage Emacs Native Commands and built-in functions
 ;; wherever possible. Custom commands only where beneficial.
 
-;; Warning: May be incompatible with other packages and modal
-;; editors. This package overrides 'ESC' to manage input states
-;; (MULE-NORMAL/MULE-INSERT). Loading it alongside other packages that
-;; bind 'ESC' will cause unexpected behavior and state conflicts.
-
 ;;; Usage:
-;; - Press <escape> to enter MULE-NORMAL state.
+;; - Press C-g to enter MULE-NORMAL state.
 ;; - In NORMAL: h,j,k,l navigate; i,I,a,A,o,O,c enter INSERT state.
-;; - In INSERT: Standard Emacs behavior, press ESC to return to NORMAL.
-;; - State indicators show in modeline: [N] = Normal, [I] = Insert.
+;; - In INSERT: Standard Emacs behavior, press C-g to return to NORMAL.
+;; - State indicators show in modeline: MULE[N] = Normal, MULE[I] = Insert.
 
 ;;; Code:
-(require 'thingatpt) ;; (mule-mark-word)
+(require 'thingatpt) ;(mule-mark-word)
 
 (eval-and-compile
   (declare-function org-open-at-point "org")     ;(mule-enter-dwim)
@@ -332,6 +327,24 @@ commenting, then returns to the Org buffer."
             (call-interactively #'kill-rectangle)
           (kill-region (mark) (point))))
     (delete-char 1)))
+
+(defun mule-yank ()
+"Yank clipboard content, includes replacing selected region."
+(interactive)
+(if (use-region-p)
+    (progn
+      (delete-active-region)
+      (clipboard-yank))
+  (clipboard-yank)))
+
+(defun mule-yank-pop ()
+  "Rotate yanks, includes replacing selected region."
+  (interactive)
+  (if (use-region-p)
+      (progn
+        (delete-active-region)
+        (yank-pop))
+    (yank-pop)))
 
 (defun mule-switch-other-buffer ()
   "Switch to previous buffer."
@@ -651,8 +664,8 @@ commenting, then returns to the Org buffer."
 (keymap-set mule-normal-mode-map "C-j" #'join-line)
 
 ;; Yank/Paste
-(keymap-set mule-normal-mode-map "P" #'yank-pop)
-(keymap-set mule-normal-mode-map "p" #'yank)
+(keymap-set mule-normal-mode-map "P" #'mule-yank-pop)
+(keymap-set mule-normal-mode-map "p" #'mule-yank)
 (keymap-set mule-normal-mode-map "y" #'kill-ring-save)
 
 ;; Motions
@@ -791,11 +804,11 @@ back to global `cursor-type'."
 (add-hook 'mule-insert-mode-hook #'mule--update-cursor)
 
 ;;; ---------------------------------------------------------------------------
-;;; Minibuffer Safety
+;;; Mule Minibuffer Safety
 ;;; ---------------------------------------------------------------------------
 (defvar mule--minibuffer-pre-state nil
   "Track MULE state before entering minibuffer.
-Value is `normal', `insert', or nil. Not buffer-local because we
+Value is 'normal, 'insert, or nil. Not buffer-local because we
 need to read it after switching buffers.")
 
 (defun mule--minibuffer-current-state ()
@@ -806,19 +819,16 @@ need to read it after switching buffers.")
    (t nil)))
 
 (add-hook 'minibuffer-setup-hook
-        (lambda ()
-          ;; Capture state from the buffer that initiated the minibuffer
-          (let ((orig-state
-                 (with-current-buffer
-                     (window-buffer (minibuffer-selected-window))
-                   (mule--minibuffer-current-state))))
-            (setq mule--minibuffer-pre-state orig-state))
-          ;; Force insert mode (passthrough) in the minibuffer itself
-          (when (bound-and-true-p mule-normal-mode)
-            (mule-normal-mode -1))
-          ;; Bind ESC in the minibuffer's local keymap so terminal ESC
-          ;; reaches our handler instead of falling through to esc-map
-          (local-set-key (kbd "ESC") #'mule--esc-insert)))
+          (lambda ()
+            ;; Capture state from the buffer that initiated the minibuffer
+            (let ((orig-state
+                   (with-current-buffer
+                       (window-buffer (minibuffer-selected-window))
+                     (mule--minibuffer-current-state))))
+              (setq mule--minibuffer-pre-state orig-state))
+            ;; Force insert mode (passthrough) in the minibuffer itself
+            (when (bound-and-true-p mule-normal-mode)
+              (mule-normal-mode -1))))
 
 (add-hook 'minibuffer-exit-hook
           (lambda ()
@@ -831,57 +841,18 @@ need to read it after switching buffers.")
             (setq mule--minibuffer-pre-state nil)))
 
 ;;; ---------------------------------------------------------------------------
-;;; Global Escape Binding
+;;; Insert to Normal Transition
 ;;; ---------------------------------------------------------------------------
-(defcustom mule-esc-delay 0.01
-  "Seconds to wait for additional input after ESC before treating it
-as a standalone key."
-  :type 'float
-  :group 'mule)
+;; C-g enters normal mode from insert state.
+;; In normal state, C-g acts as standard keyboard-quit.
+;; Preserves C-level interrupt for running commands.
+(defun mule--exit-insert ()
+"Exit insert state and quit any active command."
+(interactive)
+(mule-enter-normal)
+(keyboard-quit))
 
-(defun mule--escape-handler ()
-  "Handle <escape> key in GUI mode (native event, no disambiguation
-needed)."
-  (interactive)
-  (let ((inhibit-quit t))
-    (cond
-     ((minibuffer-window-active-p (minibuffer-window))
-      (abort-recursive-edit))
-     ((not (bound-and-true-p mule-modal))
-      (keyboard-escape-quit))
-     (mule-normal-mode
-      (keyboard-quit))
-     (t
-      (mule-enter-normal)
-      (keyboard-quit)))))
-
-(defun mule--esc-insert ()
-  "Handle terminal ESC in insert state.
-Mirrors Evil's `evil-esc': uses `sit-for' to distinguish standalone
-ESC from Meta keys and escape sequences. When more input follows,
-switches to normal state FIRST (removing the ESC binding), then
-pushes ?\\e back so it falls through to esc-map as a Meta prefix.
-This prevents the infinite loop that occurs when ?\\e is pushed
-back while still in insert state."
-  (interactive)
-  (let ((inhibit-quit t))
-    (cond
-     ((minibufferp)
-      (abort-recursive-edit))
-     ((sit-for mule-esc-delay)
-      (mule-enter-normal)
-      (keyboard-quit))
-     (t
-      (mule-enter-normal)
-      (push ?\e unread-command-events)))))
-
-;; GUI: native <escape> event (separate from Meta, no disambiguation)
-(global-set-key [escape] #'mule--escape-handler)
-
-;; Terminal: bind ESC in INSERT mode keymap ONLY.
-;; Normal mode does NOT bind ESC — it falls through to esc-map as a
-;; Meta prefix, so M-x, M-d, arrows, etc. work from normal state.
-(define-key mule-insert-mode-map (kbd "ESC") #'mule--esc-insert)
+(define-key mule-insert-mode-map (kbd "C-g") #'mule--exit-insert)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Exclusion Mode Safeguards
@@ -889,17 +860,25 @@ back while still in insert state."
 (defvar mule--excluded-modes
   '(ibuffer-mode eshell-mode term-mode vterm-mode dired-mode comint-mode magit-status-mode)
   "Major modes where MULE Normal state should be permanently
-disabled. In these modes, MULE Insert state (passthrough) is
-used instead, keeping MULE active but non-interfering.")
+    disabled. In these modes, MULE Insert state (passthrough) is used
+    instead, keeping MULE active but non-interfering.")
 
 (dolist (mode mule--excluded-modes)
   (let ((hook (intern (format "%s-hook" mode))))
-    (when (boundp hook)
-      (add-hook hook
-                (lambda ()
-                  (when (bound-and-true-p mule-normal-mode)
-                    (mule-enter-insert)))
-                -10))))
+    (if (boundp hook)
+        (add-hook hook
+                  (lambda ()
+                    (when (bound-and-true-p mule-normal-mode)
+                      (mule-enter-insert)))
+                  -10)
+      (with-eval-after-load (intern (car (split-string (symbol-name mode) "-mode")))
+        (let ((hook (intern (format "%s-hook" mode))))
+          (when (boundp hook)
+            (add-hook hook
+                      (lambda ()
+                        (when (bound-and-true-p mule-normal-mode)
+                          (mule-enter-insert)))
+                      -10)))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Enhanced Mode Activation Logic
