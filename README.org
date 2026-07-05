@@ -208,6 +208,8 @@ setting, forcing Emacs to use your global default defined by
 |-----+-------------------------------------------------|
 | m i | Simple select inside delimiters (exclude chars) |
 | m a | Simple select around delimiters (include chars) |
+| m I | Sexp select inside delimiters (exclude chars)   |
+| m A | Sexp select around delimiters (include chars)   |
 | m w | Select word at point                            |
 | m s | Select sentence at point                        |
 | m p | Select paragraph at point                       |
