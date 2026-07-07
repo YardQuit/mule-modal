@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo 2.0 Max
 ;; URL: https://github.com/yardquit/mule-modal
-;; Version: 2.4
+;; Version: 2.5
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/mule-modal
@@ -969,14 +969,16 @@ switching buffers.")
 ;; In normal state, C-g acts as standard keyboard-quit.
 ;; Preserves C-level interrupt for running commands.
 (defun mule--exit-insert ()
-  "Exit insert state and enter normal mode.
-Removes active mark, enters normal mode, and verifies the
-transition succeeded."
-  (interactive)
+  "Exit insert state and enter normal mode. Removes active mark,
+enters normal mode, and verifies the transition succeeded. In the
+minibuffer, delegates to `keyboard-quit' insetad."
+(interactive)
+(if (minibufferp)
+    (keyboard-quit)
   (deactivate-mark)
   (mule-enter-normal)
   (unless (bound-and-true-p mule-normal-mode)
-    (mule-normal-mode 1)))
+    (mule-normal-mode 1))))
 
 (defun mule--intercept-quit-in-insert ()
   "Intercept C-g in insert mode by raw key event.

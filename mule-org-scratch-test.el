@@ -2,7 +2,7 @@
 
 (require 'ert)
 (require 'org)
-(require 'mule)  ;; Adjust to wherever the functions are defined
+(require 'mule-modal)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Helper Macro
@@ -158,8 +158,16 @@
       (mule-org-scratch)
       (let ((size-after
              (with-current-buffer "*org-scratch*" (buffer-size))))
-        (should (= size-before size-after)))))
+        (should (= size-before size-after))))))
 
+;;; ---------------------------------------------------------------------------
+;;; Test Runner
+;;; ---------------------------------------------------------------------------
+
+(defun mule-run-all-tests ()
+  "Run all MULE transition tests interactively."
+  (interactive)
+  (ert "^mule-org" :result-buffer "*MULE Test Results*"))
 (provide 'mule-org-scratch-test)
 
 ;;; mule-org-scratch-test.el ends here

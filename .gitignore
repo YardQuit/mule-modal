@@ -6,6 +6,7 @@
 .eask/
 .eldev/
 .keg/
+.#*
 
 # Built distribution
 dist/
