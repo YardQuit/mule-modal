@@ -80,7 +80,7 @@
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mule Describe Bindings Functions
-  ;;; ---------------------------------------------------------------------------
+;;; ---------------------------------------------------------------------------
 (defun mule--desc-bindings-collect-leaves (map prefix)
   "Recursively walk MAP and return a list of (FULL-KEY . DEF) cons
   cells for leaf bindings."
@@ -262,11 +262,11 @@ fallthrough."
 ;;; Mule Comment DWIM Functions
 ;;; ---------------------------------------------------------------------------
 (defun mule--in-org-src-block-p ()
-  "Return non-nil if point is inside an Org source block."
-  (and (eq major-mode 'org-mode)
-       (fboundp 'org-element-at-point)
-       (let ((elem (org-element-at-point)))
-         (and elem (eq (car elem) 'src-block)))))
+"Return non-nil if point is inside an Org source block."
+(and (eq major-mode 'org-mode)
+     (fboundp 'org-element-at-point)
+     (let ((elem (org-element-at-point)))
+       (and (consp elem) (eq (car elem) 'src-block)))))
 
 (defun mule-comment-dwim ()
   "Comment/uncomment whole lines in region, or current line if no
