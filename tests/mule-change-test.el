@@ -4,6 +4,8 @@
 (require 'cl-lib)
 (require 'mule-modal)
 
+(defvar rectangle-mark-mode)
+
 ;; ===========================================================================
 ;; Section: mule-change
 ;; Selector: (ert "mule-change")
@@ -14,9 +16,9 @@
 
 (ert-deftest mule-change-no-region-deletes-single-char ()
   "Without an active region, deletes the character at point.
-Buffer: \"hello\\n\" — 6 chars. Point at 1.
-After delete-char 1: \"ello\\n\" — 5 chars.
-Expected: delete-char called with 1, buffer has 5 chars."
+    Buffer: \"hello\\n\" — 6 chars. Point at 1.
+    After delete-char 1: \"ello\\n\" — 5 chars.
+    Expected: delete-char called with 1, buffer has 5 chars."
   (let (entered deleted-arg)
     (with-temp-buffer
       (insert "hello\n")
@@ -37,7 +39,7 @@ Expected: delete-char called with 1, buffer has 5 chars."
 
 (ert-deftest mule-change-no-region-enters-insert ()
   "Without region, enters insert mode after deletion.
-Expected: mule-enter-insert called exactly once."
+    Expected: mule-enter-insert called exactly once."
   (let ((call-count 0))
     (with-temp-buffer
       (insert "hello\n")
@@ -53,9 +55,9 @@ Expected: mule-enter-insert called exactly once."
 
 (ert-deftest mule-change-no-region-from-middle ()
   "Deletes the character at point in the middle of a line.
-Buffer: \"hello\\n\" — 6 chars. Point at 3 ('l').
-After delete-char 1: \"helo\\n\" — 5 chars.
-Expected: buffer has 5 chars, point at 3."
+    Buffer: \"hello\\n\" — 6 chars. Point at 3 ('l').
+    After delete-char 1: \"helo\\n\" — 5 chars.
+    Expected: buffer has 5 chars, point at 3."
   (with-temp-buffer
     (insert "hello\n")
     (goto-char 3)
@@ -69,9 +71,9 @@ Expected: buffer has 5 chars, point at 3."
 
 (ert-deftest mule-change-no-region-last-char ()
   "Deletes the last character before newline.
-Buffer: \"hello\\n\" — 6 chars. Point at 5 ('o').
-After delete-char 1: \"hell\\n\" — 5 chars.
-Expected: buffer has 5 chars, point at 5."
+    Buffer: \"hello\\n\" — 6 chars. Point at 5 ('o').
+    After delete-char 1: \"hell\\n\" — 5 chars.
+    Expected: buffer has 5 chars, point at 5."
   (with-temp-buffer
     (insert "hello\n")
     (goto-char 5)
@@ -85,8 +87,8 @@ Expected: buffer has 5 chars, point at 5."
 
 (ert-deftest mule-change-no-region-empty-buffer-errors ()
   "Empty buffer, no region. delete-char 1 signals end-of-buffer.
-The function does not guard against this.
-Expected: end-of-buffer error signaled."
+    The function does not guard against this.
+    Expected: end-of-buffer error signaled."
   (with-temp-buffer
     (cl-letf (((symbol-function 'use-region-p)
                (lambda () nil))
@@ -96,7 +98,7 @@ Expected: end-of-buffer error signaled."
 
 (ert-deftest mule-change-no-region-at-end-of-buffer-errors ()
   "Point at point-max, no region. delete-char 1 signals end-of-buffer.
-Expected: end-of-buffer error signaled."
+    Expected: end-of-buffer error signaled."
   (with-temp-buffer
     (insert "hello\n")
     (goto-char (point-max))
@@ -106,14 +108,14 @@ Expected: end-of-buffer error signaled."
                (lambda () nil)))
       (should-error (mule-change) :type 'end-of-buffer))))
 
-;;; --- Region active: delete-region ---
+    ;;; --- Region active: delete-region ---
 
 (ert-deftest mule-change-region-deletes-region ()
   "With an active region (not rectangle), deletes from mark to point.
-Buffer: \"hello world\\n\" — 12 chars.
-Point at 6, mark at 1.
-delete-region deletes positions 1-5, leaving \" world\\n\".
-Expected: delete-region called with (1, 6), mule-enter-insert called."
+    Buffer: \"hello world\\n\" — 12 chars.
+    Point at 6, mark at 1.
+    delete-region deletes positions 1-5, leaving \" world\\n\".
+    Expected: delete-region called with (1, 6), mule-enter-insert called."
   (let (entered deleted-bounds)
     (with-temp-buffer
       (insert "hello world\n")
@@ -137,8 +139,8 @@ Expected: delete-region called with (1, 6), mule-enter-insert called."
 
 (ert-deftest mule-change-region-enters-insert ()
   "With an active region (not rectangle), enters insert mode after
-deletion.
-Expected: mule-enter-insert called exactly once."
+    deletion.
+    Expected: mule-enter-insert called exactly once."
   (let ((call-count 0))
     (with-temp-buffer
       (insert "hello world\n")
@@ -152,11 +154,11 @@ Expected: mule-enter-insert called exactly once."
                  (lambda () (cl-incf call-count))))
         (let ((rectangle-mark-mode nil))
           (mule-change)))
-    (should (= call-count 1)))))
+      (should (= call-count 1)))))
 
 (ert-deftest mule-change-region-skips-delete-char ()
   "With an active region, delete-char is not called.
-Expected: delete-char not invoked."
+    Expected: delete-char not invoked."
   (let (delete-char-called)
     (with-temp-buffer
       (insert "hello\n")
@@ -172,14 +174,14 @@ Expected: delete-char not invoked."
                  (lambda () nil)))
         (let ((rectangle-mark-mode nil))
           (mule-change)))
-    (should-not delete-char-called))))
+      (should-not delete-char-called))))
 
 (ert-deftest mule-change-region-mark-before-point ()
   "Region with mark before point.
-Buffer: \"hello world\\n\" — 12 chars.
-Mark at 1, point at 6.
-delete-region called with (mark, point) = (1, 6).
-Expected: delete-region receives (1, 6)."
+    Buffer: \"hello world\\n\" — 12 chars.
+    Mark at 1, point at 6.
+    delete-region called with (mark, point) = (1, 6).
+    Expected: delete-region receives (1, 6)."
   (let (deleted-bounds)
     (with-temp-buffer
       (insert "hello world\n")
@@ -193,16 +195,16 @@ Expected: delete-region receives (1, 6)."
                  (lambda () nil)))
         (let ((rectangle-mark-mode nil))
           (mule-change)))
-    (should (= (car deleted-bounds) 1))
-    (should (= (cadr deleted-bounds) 6)))))
+      (should (= (car deleted-bounds) 1))
+      (should (= (cadr deleted-bounds) 6)))))
 
 (ert-deftest mule-change-region-point-before-mark ()
   "Region with point before mark.
-Buffer: \"hello world\\n\" — 12 chars.
-Point at 1, mark at 6.
-delete-region called with (mark, point) = (6, 1).
-The source uses (delete-region (mark) (point)), so mark is first arg.
-Expected: delete-region receives (6, 1)."
+    Buffer: \"hello world\\n\" — 12 chars.
+    Point at 1, mark at 6.
+    delete-region called with (mark, point) = (6, 1).
+    The source uses (delete-region (mark) (point)), so mark is first arg.
+    Expected: delete-region receives (6, 1)."
   (let (deleted-bounds)
     (with-temp-buffer
       (insert "hello world\n")
@@ -216,15 +218,15 @@ Expected: delete-region receives (6, 1)."
                  (lambda () nil)))
         (let ((rectangle-mark-mode nil))
           (mule-change)))
-    (should (= (car deleted-bounds) 6))
-    (should (= (cadr deleted-bounds) 1)))))
+      (should (= (car deleted-bounds) 6))
+      (should (= (cadr deleted-bounds) 1)))))
 
 (ert-deftest mule-change-region-single-char-region ()
   "Region covers a single character.
-Buffer: \"abc\\n\" — 4 chars.
-Point at 1, mark at 2.
-delete-region called with (2, 1).
-Expected: delete-region receives (2, 1)."
+    Buffer: \"abc\\n\" — 4 chars.
+    Point at 1, mark at 2.
+    delete-region called with (2, 1).
+    Expected: delete-region receives (2, 1)."
   (let (deleted-bounds)
     (with-temp-buffer
       (insert "abc\n")
@@ -238,15 +240,15 @@ Expected: delete-region receives (2, 1)."
                  (lambda () nil)))
         (let ((rectangle-mark-mode nil))
           (mule-change)))
-    (should (= (car deleted-bounds) 2))
-    (should (= (cadr deleted-bounds) 1)))))
+      (should (= (car deleted-bounds) 2))
+      (should (= (cadr deleted-bounds) 1)))))
 
-;;; --- Rectangle mode ---
+    ;;; --- Rectangle mode ---
 
 (ert-deftest mule-change-rectangle-mode-calls-string-rectangle ()
   "With an active region and rectangle-mark-mode enabled,
-delegates to call-interactively string-rectangle.
-Expected: call-interactively called with string-rectangle."
+    delegates to call-interactively string-rectangle.
+    Expected: call-interactively called with string-rectangle."
   (let (called-cmd)
     (with-temp-buffer
       (insert "hello\n")
@@ -260,11 +262,11 @@ Expected: call-interactively called with string-rectangle."
                  (lambda () nil)))
         (let ((rectangle-mark-mode t))
           (mule-change)))
-    (should (eq called-cmd 'string-rectangle)))))
+      (should (eq called-cmd 'string-rectangle)))))
 
 (ert-deftest mule-change-rectangle-mode-skips-delete-region ()
   "In rectangle mode, delete-region is not called.
-Expected: delete-region not invoked."
+    Expected: delete-region not invoked."
   (let (delete-region-called)
     (with-temp-buffer
       (insert "hello\n")
@@ -280,11 +282,11 @@ Expected: delete-region not invoked."
                  (lambda () nil)))
         (let ((rectangle-mark-mode t))
           (mule-change)))
-    (should-not delete-region-called))))
+      (should-not delete-region-called))))
 
 (ert-deftest mule-change-rectangle-mode-enters-insert ()
   "In rectangle mode, still enters insert mode after string-rectangle.
-Expected: mule-enter-insert called."
+    Expected: mule-enter-insert called."
   (let (entered)
     (with-temp-buffer
       (insert "hello\n")
@@ -298,12 +300,12 @@ Expected: mule-enter-insert called."
                  (lambda () (setq entered t))))
         (let ((rectangle-mark-mode t))
           (mule-change)))
-    (should entered))))
+      (should entered))))
 
 (ert-deftest mule-change-rectangle-mode-falls-back-when-disabled ()
   "When rectangle-mark-mode is nil and region is active,
-falls back to delete-region.
-Expected: delete-region called, call-interactively not called."
+    falls back to delete-region.
+    Expected: delete-region called, call-interactively not called."
   (let (delete-called ci-called)
     (with-temp-buffer
       (insert "hello\n")
@@ -319,16 +321,16 @@ Expected: delete-region called, call-interactively not called."
                  (lambda () nil)))
         (let ((rectangle-mark-mode nil))
           (mule-change)))
-    (should delete-called)
-    (should-not ci-called))))
+      (should delete-called)
+      (should-not ci-called))))
 
-;;; --- Buffer integrity ---
+    ;;; --- Buffer integrity ---
 
 (ert-deftest mule-change-no-region-preserves-surrounding-text ()
   "Deleting one char leaves the rest of the buffer intact.
-Buffer: \"hello world\\n\" — 12 chars. Point at 6 (space).
-After delete-char 1: \"helloworld\\n\" — 11 chars.
-Expected: 'hello' at 1-5, 'world' at 6-10."
+    Buffer: \"hello world\\n\" — 12 chars. Point at 6 (space).
+    After delete-char 1: \"helloworld\\n\" — 11 chars.
+    Expected: 'hello' at 1-5, 'world' at 6-10."
   (with-temp-buffer
     (insert "hello world\n")
     (goto-char 6)
@@ -342,10 +344,10 @@ Expected: 'hello' at 1-5, 'world' at 6-10."
 
 (ert-deftest mule-change-region-deletes-correct-text ()
   "Deleting a region removes exactly the marked text.
-Buffer: \"hello world\\n\" — 12 chars.
-Mark at 1, point at 6. Deletes 'hello'.
-After: \" world\\n\" — 7 chars.
-Expected: buffer starts with ' world'."
+    Buffer: \"hello world\\n\" — 12 chars.
+    Mark at 1, point at 6. Deletes 'hello'.
+    After: \" world\\n\" — 7 chars.
+    Expected: buffer starts with ' world'."
   (with-temp-buffer
     (insert "hello world\n")
     (goto-char 6)
@@ -358,11 +360,11 @@ Expected: buffer starts with ' world'."
         (mule-change)))
     (should (string= (buffer-substring 1 7) " world"))))
 
-;;; --- Interactive call ---
+    ;;; --- Interactive call ---
 
 (ert-deftest mule-change-call-interactively-no-region ()
   "Can be called interactively without a region.
-Expected: no error, delete-char and mule-enter-insert execute."
+    Expected: no error, delete-char and mule-enter-insert execute."
   (let (entered)
     (with-temp-buffer
       (insert "hello\n")
@@ -377,7 +379,7 @@ Expected: no error, delete-char and mule-enter-insert execute."
 
 (ert-deftest mule-change-call-interactively-with-region ()
   "Can be called interactively with a region.
-Expected: no error, delete-region and mule-enter-insert execute."
+    Expected: no error, delete-region and mule-enter-insert execute."
   (let (entered)
     (with-temp-buffer
       (insert "hello world\n")
@@ -392,6 +394,6 @@ Expected: no error, delete-region and mule-enter-insert execute."
       (should entered)
       (should (= (buffer-size) 7)))))
 
-;;; mule-change-test.el ends here
+    ;;; mule-change-test.el ends here
 
 (ert "mule-change")
