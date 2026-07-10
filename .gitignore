@@ -24,3 +24,7 @@ mule-modal-exp*.el
 nohup.out
 *__*.org
 .project*
+
+# files
+mule--test.el
+^20*.org$
