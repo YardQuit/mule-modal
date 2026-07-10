@@ -58,7 +58,7 @@
 # Start your scribble here and save to file with ‘\\[save-some-buffers]' for persistence.
 
 ")))
-(goto-char (point-max)))
+  (goto-char (point-max)))
 
 (defun mule-create-org-scratch ()
   "Create an _org-scratch_ buffer."
@@ -211,7 +211,7 @@
 (defvar mule-editing-modes
   '(prog-mode text-mode org-mode fundamental-mode conf-mode markdown-mode gfm-mode)
   "Major modes where Enter should be blocked to prevent accidental
-    line breaks.")
+        line breaks.")
 
 (defun mule--editing-mode-p ()
   "Return non-nil if current major mode is in `mule-editing-modes'."
@@ -237,15 +237,25 @@
      (t
       #'browse-url-at-point))))
 
+;; (defun mule--non-editing-enter-handler ()
+;;   "Handle Enter in non-editing modes (Info, Dired, etc.):
+;; fallthrough."
+;;   (unless (mule--editing-mode-p)
+;;     (let ((native-ret (lookup-key (current-local-map) (kbd "RET"))))
+;;       (when (and native-ret
+;;                  (not (eq native-ret 'undefined))
+;;                  (symbolp native-ret)
+;;                  (fboundp native-ret))
+;;         native-ret))))
+
 (defun mule--non-editing-enter-handler ()
   "Handle Enter in non-editing modes (Info, Dired, etc.):
-fallthrough."
+Return the native RET binding if it's not a prefix key."
   (unless (mule--editing-mode-p)
     (let ((native-ret (lookup-key (current-local-map) (kbd "RET"))))
       (when (and native-ret
                  (not (eq native-ret 'undefined))
-                 (symbolp native-ret)
-                 (fboundp native-ret))
+                 (not (keymapp native-ret)))
         native-ret))))
 
 (defun mule-enter-dwim ()
@@ -262,11 +272,11 @@ fallthrough."
 ;;; Mule Comment DWIM Functions
 ;;; ---------------------------------------------------------------------------
 (defun mule--in-org-src-block-p ()
-"Return non-nil if point is inside an Org source block."
-(and (eq major-mode 'org-mode)
-     (fboundp 'org-element-at-point)
-     (let ((elem (org-element-at-point)))
-       (and (consp elem) (eq (car elem) 'src-block)))))
+  "Return non-nil if point is inside an Org source block."
+  (and (eq major-mode 'org-mode)
+       (fboundp 'org-element-at-point)
+       (let ((elem (org-element-at-point)))
+         (and (consp elem) (eq (car elem) 'src-block)))))
 
 (defun mule-comment-dwim ()
   "Comment/uncomment whole lines in region, or current line if no
@@ -402,13 +412,13 @@ commenting, then returns to the Org buffer."
     (delete-char 1)))
 
 (defun mule-yank ()
-"Yank clipboard content, includes replacing selected region."
-(interactive)
-(if (use-region-p)
-    (progn
-      (delete-active-region)
-      (clipboard-yank))
-  (clipboard-yank)))
+  "Yank clipboard content, includes replacing selected region."
+  (interactive)
+  (if (use-region-p)
+      (progn
+        (delete-active-region)
+        (clipboard-yank))
+    (clipboard-yank)))
 
 (defun mule-yank-pop ()
   "Rotate yanks, includes replacing selected region."
@@ -986,28 +996,28 @@ switching buffers.")
             (setq mule--minibuffer-pre-state nil)))
 
 ;;; ---------------------------------------------------------------------------
-;;; Insert to Normal Transition
-;;; ---------------------------------------------------------------------------
+  ;;; Insert to Normal Transition
+  ;;; ---------------------------------------------------------------------------
 ;; C-g enters normal mode from insert state.
 ;; In normal state, C-g acts as standard keyboard-quit.
 ;; Preserves C-level interrupt for running commands.
 (defun mule--exit-insert ()
   "Exit insert state and enter normal mode. Removes active mark,
-enters normal mode, and verifies the transition succeeded. In the
-minibuffer, delegates to `keyboard-quit' insetad."
-(interactive)
-(if (minibufferp)
-    (keyboard-quit)
-  (deactivate-mark)
-  (mule-enter-normal)
-  (unless (bound-and-true-p mule-normal-mode)
-    (mule-normal-mode 1))))
+  enters normal mode, and verifies the transition succeeded. In the
+  minibuffer, delegates to `keyboard-quit' insetad."
+  (interactive)
+  (if (minibufferp)
+      (keyboard-quit)
+    (deactivate-mark)
+    (mule-enter-normal)
+    (unless (bound-and-true-p mule-normal-mode)
+      (mule-normal-mode 1))))
 
 (defun mule--intercept-quit-in-insert ()
   "Intercept C-g in insert mode by raw key event.
-Bypasses all keymap priority issues — checks the actual key
-pressed, not which command it resolved to. Sets this-command to
-ignore so smartparens' overlay handler does not run."
+  Bypasses all keymap priority issues — checks the actual key
+  pressed, not which command it resolved to. Sets this-command to
+  ignore so smartparens' overlay handler does not run."
   (when (and (bound-and-true-p mule-insert-mode)
              (not (minibufferp))
              (equal (this-single-command-keys) [7]))
@@ -1021,15 +1031,33 @@ ignore so smartparens' overlay handler does not run."
 
 (keymap-set mule-insert-mode-map "C-g" #'mule--exit-insert)
 
-(defvar smartparens-mode-map nil
-"Keymap for smartparens-mode. Declared here to silence byte-compiler.")
+;; (defvar smartparens-mode-map nil
+;; "Keymap for smartparens-mode. Declared here to silence byte-compiler.")
 
+;; (with-eval-after-load 'smartparens
+;;   (keymap-set smartparens-mode-map "C-g" #'mule--exit-insert))
+
+(defun mule--setup-smartparens-integration ()
+  "Configure C-g handler in smartparens-mode-map.
+Safely checks for existence and validity of smartparens-mode-map
+before attempting modification."
+  (when (and (boundp 'smartparens-mode-map)
+             (keymapp smartparens-mode-map))
+    (keymap-set smartparens-mode-map "C-g" #'mule--exit-insert)))
+
+;; Register deferred setup when smartparens loads
 (with-eval-after-load 'smartparens
-  (keymap-set smartparens-mode-map "C-g" #'mule--exit-insert))
+  (mule--setup-smartparens-integration))
+
+;; If smartparens already loaded, setup immediately
+(when (featurep 'smartparens)
+  (mule--setup-smartparens-integration))
+
+;; end of test
 
 (defvar-local mule--saved-input-method nil
   "Buffer-local saved input method name for restoration on Insert
-entry.")
+  entry.")
 
 (defun mule--on-normal-entry ()
   "Deactivate input method when entering Normal state."

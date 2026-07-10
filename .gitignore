@@ -28,3 +28,4 @@ nohup.out
 # files
 mule--test.el
 ^20*.org$
+run_tests.sh
