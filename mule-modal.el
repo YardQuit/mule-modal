@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo 2.0 Max
 ;; URL: https://github.com/yardquit/mule-modal
-;; Version: 2.6
+;; Version: 2.7
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/mule-modal
@@ -45,6 +45,116 @@
   (declare-function org-edit-special "org")      ;(mule-comment-dwim)
   (defvar mule-normal-mode-map nil)
   (defvar mule-insert-mode-map nil))
+
+;;; ---------------------------------------------------------------------------
+;;; Clipboard Integration (Wayland/X11)
+;;; ---------------------------------------------------------------------------
+(defgroup mule-clipboard nil
+  "Clipboard integration settings for mule-modal."
+  :group 'mule
+  :prefix "mule-")
+
+(defun mule-clipboard--paste-from-system ()
+  "Return the contents of the system clipboard.
+
+Returns nil if no clipboard tool is available or the clipboard is empty.
+Automatically detects Wayland or X11 based on available tools.
+Falls back to Emacs kill-ring if no tool is found.
+
+This function strips control characters (except tab) from clipboard
+content to prevent ^L and other special characters from appearing."
+  (let ((content
+         (cond
+          ;; Wayland (priority)
+          ((executable-find "wl-paste")
+           (shell-command-to-string "wl-paste --no-newline 2>/dev/null"))
+          ;; X11
+          ((executable-find "xclip")
+           (shell-command-to-string "xclip -selection clipboard -o 2>/dev/null"))
+          ;; No tool available
+          (t ""))))
+    (unless (string-empty-p (string-trim content))
+      ;; Strip control characters except tab (0x09) and newline (0x0A, 0x0D)
+      (replace-regexp-in-string "[\x00-\x08\x0B\x0C\x0E-\x1F]" ""
+                                (replace-regexp-in-string "\n\\{2,\\}" "\n" content)
+                                'fixedcase 'literal))))
+
+(defun mule-clipboard--copy-to-system (text)
+  "Copy TEXT to the system clipboard.
+
+  Uses wl-copy on Wayland or xclip on X11 if available.
+  If neither tool is available, this function does nothing silently.
+  Falls back to standard kill-ring behavior in this case.
+
+  This function is intended for use with `interprogram-cut-function'
+  in terminal mode (`emacs -nw')."
+  (cond
+   ;; Wayland
+   ((executable-find "wl-copy")
+    (let ((process-connection-type nil))
+      (let ((proc (start-process "mule-wl-copy" nil "wl-copy")))
+        (process-send-string proc text)
+        (process-send-eof proc))))
+   ;; X11
+   ((executable-find "xclip")
+    (let ((process-connection-type nil))
+      (let ((proc (start-process "mule-xclip" nil "xclip" "-selection" "clipboard")))
+        (process-send-string proc text)
+        (process-send-eof proc))))
+   ;; No clipboard tool
+   (t nil)))
+
+(defun mule-clipboard-enable ()
+  "Enable system clipboard integration in terminal mode.
+
+  Sets `interprogram-paste-function' and `interprogram-cut-function'
+  to use system clipboard tools when available.  Falls back to Emacs
+  kill-ring only if no clipboard tool is found.
+
+  This function should be called from `after-init-hook' or your
+  init configuration."
+  (when (not (display-graphic-p))
+    (setq interprogram-paste-function #'mule-clipboard--paste-from-system)
+    (setq interprogram-cut-function #'mule-clipboard--copy-to-system)
+    (message "mule-clipboard: enabled (terminal mode)")))
+
+(defun mule-clipboard-disable ()
+  "Disable system clipboard integration.
+
+  Resets `interprogram-paste-function' and `interprogram-cut-function'
+  to their default values, reverting to kill-ring only behavior."
+  (when (not (display-graphic-p))
+    (setq interprogram-paste-function nil)
+    (setq interprogram-cut-function nil)
+    (message "mule-clipboard: disabled")))
+
+(defun mule-clipboard-available ()
+  "Non-nil if system clipboard tools are available.
+
+  Checks for wl-paste/wl-copy (Wayland) or xclip (X11).
+  Returns a symbol indicating which tool was found: `wayland', `x11', or nil."
+  (cond
+   ((executable-find "wl-paste") 'wayland)
+   ((executable-find "xclip") 'x11)
+   (t nil)))
+
+  ;;;###autoload
+(defun mule-clipboard-check ()
+  "Report clipboard tool availability status.
+
+  Displays a message describing which clipboard backend (if any)
+  is available for terminal mode."
+  (interactive)
+  (let ((backend (mule-clipboard-available)))
+    (if backend
+        (message "mule-clipboard: %s backend available" backend)
+      (message "mule-clipboard: no clipboard backend available (kill-ring only)"))))
+
+  ;;; Initialize on startup if running in terminal mode
+(add-hook 'after-init-hook
+          (lambda ()
+            (when (not (display-graphic-p))
+              (mule-clipboard-enable))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Org-Scratch Buffer Creation Functions
