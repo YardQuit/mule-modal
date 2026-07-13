@@ -11,7 +11,6 @@
 ;; Homepage: https://github.com/yardquit/mule-modal
 
 ;; This file is not part of GNU Emacs.
-
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation, either version 3 of the License, or
@@ -23,7 +22,7 @@
 ;; GNU General Public License for more details.
 ;;
 ;; You should have received a copy of the GNU General Public License
-;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
+;; along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;; Philosophy: Leverage Emacs Native Commands and built-in functions
@@ -37,7 +36,6 @@
 
 ;;; Code:
 (require 'thingatpt) ;(mule-mark-word)
-
 (eval-and-compile
   (declare-function org-open-at-point "org")     ;(mule-enter-dwim)
   (declare-function org-element-at-point "org")  ;(mule-enter-dwim)
@@ -49,6 +47,7 @@
 ;;; ---------------------------------------------------------------------------
 ;;; Clipboard Integration (Wayland/X11)
 ;;; ---------------------------------------------------------------------------
+
 (defgroup mule-clipboard nil
   "Clipboard integration settings for mule-modal."
   :group 'mule
@@ -57,37 +56,34 @@
 (defun mule-clipboard--paste-from-system ()
   "Return the contents of the system clipboard.
 
-Returns nil if no clipboard tool is available or the clipboard is empty.
-Automatically detects Wayland or X11 based on available tools.
-Falls back to Emacs kill-ring if no tool is found.
+Returns nil if no clipboard tool is available or the clipboard is
+empty. Automatically detects Wayland or X11 based on available
+tools. Falls back to Emacs kill-ring if no tool is found.
 
-This function strips control characters (except tab) from clipboard
-content to prevent ^L and other special characters from appearing."
+This function strips control characters (except tab and newline)
+from clipboard content to prevent ^L and other special characters
+from appearing."
   (let ((content
          (cond
-          ;; Wayland (priority)
           ((executable-find "wl-paste")
            (shell-command-to-string "wl-paste --no-newline 2>/dev/null"))
-          ;; X11
           ((executable-find "xclip")
            (shell-command-to-string "xclip -selection clipboard -o 2>/dev/null"))
-          ;; No tool available
           (t ""))))
     (unless (string-empty-p (string-trim content))
-      ;; Strip control characters except tab (0x09) and newline (0x0A, 0x0D)
-      (replace-regexp-in-string "[\x00-\x08\x0B\x0C\x0E-\x1F]" ""
-                                (replace-regexp-in-string "\n\\{2,\\}" "\n" content)
-                                'fixedcase 'literal))))
+      (replace-regexp-in-string
+       "[\x00-\x08\x0B\x0C\x0E-\x1F]" ""
+       content 'fixedcase 'literal))))
 
 (defun mule-clipboard--copy-to-system (text)
   "Copy TEXT to the system clipboard.
 
-  Uses wl-copy on Wayland or xclip on X11 if available.
-  If neither tool is available, this function does nothing silently.
-  Falls back to standard kill-ring behavior in this case.
+Uses wl-copy on Wayland or xclip on X11 if available. If neither
+tool is available, this function does nothing silently. Falls back
+to standard kill-ring behavior in this case.
 
-  This function is intended for use with `interprogram-cut-function'
-  in terminal mode (`emacs -nw')."
+This function is intended for use with `interprogram-cut-function'
+in terminal mode (`emacs -nw')."
   (cond
    ;; Wayland
    ((executable-find "wl-copy")
@@ -138,7 +134,6 @@ content to prevent ^L and other special characters from appearing."
    ((executable-find "xclip") 'x11)
    (t nil)))
 
-  ;;;###autoload
 (defun mule-clipboard-check ()
   "Report clipboard tool availability status.
 
@@ -150,15 +145,15 @@ content to prevent ^L and other special characters from appearing."
         (message "mule-clipboard: %s backend available" backend)
       (message "mule-clipboard: no clipboard backend available (kill-ring only)"))))
 
-  ;;; Initialize on startup if running in terminal mode
 (add-hook 'after-init-hook
           (lambda ()
             (when (not (display-graphic-p))
               (mule-clipboard-enable))))
 
 ;;; ---------------------------------------------------------------------------
-;;; Org-Scratch Buffer Creation Functions
+;;; Org-Scratch Buffer Creation
 ;;; ---------------------------------------------------------------------------
+
 (defun mule-insert-org-scratch-message ()
   "Insert buffer message"
   (insert
@@ -166,7 +161,6 @@ content to prevent ^L and other special characters from appearing."
     (purecopy "\
 # This buffer is for scribbling in org-mode.
 # Start your scribble here and save to file with ‘\\[save-some-buffers]' for persistence.
-
 ")))
   (goto-char (point-max)))
 
@@ -189,8 +183,9 @@ content to prevent ^L and other special characters from appearing."
       (message "*org-scratch* buffer doesn't exist, creating."))))
 
 ;;; ---------------------------------------------------------------------------
-;;; Mule Describe Bindings Functions
+;;; Mule Describe Bindings
 ;;; ---------------------------------------------------------------------------
+
 (defun mule--desc-bindings-collect-leaves (map prefix)
   "Recursively walk MAP and return a list of (FULL-KEY . DEF) cons
   cells for leaf bindings."
@@ -228,33 +223,29 @@ content to prevent ^L and other special characters from appearing."
 
 (defun mule-describe-bindings ()
   "Display all leaf keybindings in mule-normal-mode-map with formatting.
+
   Bindings are grouped by prefix, separated by blank rows and section
-  headers.  Command names are clickable buttons that open their
+  headers. Command names are clickable buttons that open their
   documentation."
   (interactive)
   (unless (boundp 'mule-normal-mode-map)
     (user-error "mule-normal-mode-map is not defined yet"))
-
   (let* ((buf (get-buffer-create "*MULE Bindings*"))
          (raw (mule--desc-bindings-collect-leaves mule-normal-mode-map ""))
          (sorted-raw (sort raw (lambda (a b) (string< (car a) (car b))))))
-
     (with-current-buffer buf
       (setq buffer-read-only nil)
       (erase-buffer)
-
       ;; Title
       (insert (propertize "MULE Normal Mode Key Bindings\n"
                           'face '(bold font-lock-function-name-face :height 1.2)))
       (insert (propertize (make-string 50 ?=)
                           'face 'font-lock-comment-face) "\n\n")
-
       ;; Column header
       (insert (propertize (format "%-14s %s\n" "KEY" "COMMAND")
                           'face 'font-lock-keyword-face))
       (insert (propertize (make-string 50 ?-)
                           'face 'font-lock-comment-face) "\n")
-
       ;; Binding entries
       (let ((prev-group nil)
             (lines-added 0))
@@ -266,7 +257,6 @@ content to prevent ^L and other special characters from appearing."
                              "single"))
                  (new-block-p (and (> lines-added 0)
                                    (not (equal prev-group group)))))
-
             ;; Separator + header on group transition
             (when new-block-p
               (insert "\n")
@@ -275,11 +265,9 @@ content to prevent ^L and other special characters from appearing."
               (insert "\n")
               (insert (propertize (make-string 50 ?-)
                                   'face 'font-lock-comment-face) "\n"))
-
             ;; Key column
             (insert (propertize (format "%-14s " full-key)
                                 'face 'font-lock-variable-name-face))
-
             ;; Command name as clickable button
             (if (symbolp def)
                 (insert-text-button (symbol-name def)
@@ -288,22 +276,18 @@ content to prevent ^L and other special characters from appearing."
                                     'help-echo (format "Describe %s" def))
               (insert "[complex]"))
             (insert "\n")
-
             (setq lines-added (1+ lines-added)
                   prev-group  group))))
-
       ;; Footer
       (insert "\n")
       (insert (propertize (make-string 50 ?=)
                           'face 'font-lock-comment-face) "\n")
       (insert (propertize "q: quit  |  RET or click: describe command"
                           'face 'font-lock-comment-face))
-
       ;; Buffer settings
       (special-mode)
       (setq-local buffer-read-only t)
       (setq-local truncate-lines t)
-
       ;; Local keymap — avoids polluting shared special-mode-map
       (let ((local-map (make-sparse-keymap)))
         (set-keymap-parent local-map special-mode-map)
@@ -312,51 +296,40 @@ content to prevent ^L and other special characters from appearing."
         (use-local-map local-map))
       
       (goto-char (point-min)))
-
     (display-buffer buf)))
 
 ;;; ---------------------------------------------------------------------------
-  ;;; Mule Enter DWIM Functions
-  ;;; ---------------------------------------------------------------------------
-  (defvar mule-editing-modes
-    '(prog-mode text-mode org-mode fundamental-mode conf-mode markdown-mode gfm-mode)
-    "Major modes where Enter should be blocked to prevent accidental
+;;; DWIM Commands
+;;; ---------------------------------------------------------------------------
+
+(defvar mule-editing-modes
+  '(prog-mode text-mode org-mode fundamental-mode conf-mode markdown-mode gfm-mode)
+  "Major modes where Enter should be blocked to prevent accidental
           line breaks.")
 
-  (defun mule--editing-mode-p ()
-    "Return non-nil if current major mode is in `mule-editing-modes'."
-    (member major-mode mule-editing-modes))
+(defun mule--editing-mode-p ()
+  "Return non-nil if current major mode is in `mule-editing-modes'."
+  (member major-mode mule-editing-modes))
 
-  (defun mule--org-enter-handler ()
-    "Handle Enter in Org mode: follow links except src-blocks."
-    (when (and (eq major-mode 'org-mode)
-               (fboundp 'org-element-at-point)
-               (fboundp 'org-open-at-point))
-      (let ((elem (org-element-at-point)))
-        (when (and elem (not (eq (car elem) 'src-block)))
-          #'org-open-at-point))))
+(defun mule--org-enter-handler ()
+  "Handle Enter in Org mode: follow links except src-blocks."
+  (when (and (eq major-mode 'org-mode)
+             (fboundp 'org-element-at-point)
+             (fboundp 'org-open-at-point))
+    (let ((elem (org-element-at-point)))
+      (when (and elem (not (eq (car elem) 'src-block)))
+        #'org-open-at-point))))
 
-  (defun mule--markdown-enter-handler ()
-    "Handle Enter in Markdown mode: follow links/buttons."
-    (when (memq major-mode '(markdown-mode gfm-mode))
-      (cond
-       ((fboundp 'markdown-follow-thing-at-point)
-        #'markdown-follow-thing-at-point)
-       ((fboundp 'shr-follow-link-at-point)
-        #'shr-follow-link-at-point)
-       (t
-        #'browse-url-at-point))))
-
-  ;; (defun mule--non-editing-enter-handler ()
-  ;;   "Handle Enter in non-editing modes (Info, Dired, etc.):
-  ;; fallthrough."
-  ;;   (unless (mule--editing-mode-p)
-  ;;     (let ((native-ret (lookup-key (current-local-map) (kbd "RET"))))
-  ;;       (when (and native-ret
-  ;;                  (not (eq native-ret 'undefined))
-  ;;                  (symbolp native-ret)
-  ;;                  (fboundp native-ret))
-  ;;         native-ret))))
+(defun mule--markdown-enter-handler ()
+  "Handle Enter in Markdown mode: follow links/buttons."
+  (when (memq major-mode '(markdown-mode gfm-mode))
+    (cond
+     ((fboundp 'markdown-follow-thing-at-point)
+      #'markdown-follow-thing-at-point)
+     ((fboundp 'shr-follow-link-at-point)
+      #'shr-follow-link-at-point)
+     (t
+      #'browse-url-at-point))))
 
 (defun mule--non-editing-enter-handler ()
   "Handle Enter in non-editing modes (Info, Dired, etc.):
@@ -368,19 +341,16 @@ Return the native RET binding if it's not a prefix key."
                  (not (keymapp native-ret)))
         native-ret))))
 
-  (defun mule-enter-dwim ()
-    "Smart Return handler for MULE Normal State."
-    (interactive)
-    (let ((follow-cmd nil))
-      (setq follow-cmd (or (mule--org-enter-handler)
-                           (mule--markdown-enter-handler)
-                           (mule--non-editing-enter-handler)))
-      (when follow-cmd
-        (call-interactively follow-cmd))))
+(defun mule-enter-dwim ()
+  "Smart Return handler for MULE Normal State."
+  (interactive)
+  (let ((follow-cmd nil))
+    (setq follow-cmd (or (mule--org-enter-handler)
+                         (mule--markdown-enter-handler)
+                         (mule--non-editing-enter-handler)))
+    (when follow-cmd
+      (call-interactively follow-cmd))))
 
-;;; ---------------------------------------------------------------------------
-;;; Mule Comment DWIM Functions
-;;; ---------------------------------------------------------------------------
 (defun mule--in-org-src-block-p ()
   "Return non-nil if point is inside an Org source block."
   (and (eq major-mode 'org-mode)
@@ -439,12 +409,94 @@ commenting, then returns to the Org buffer."
        (line-beginning-position 2)))
     (deactivate-mark))))
 
+;;; ---------------------------------------------------------------------------
+;;; Line and Buffer Navigation Commands
+;;; ---------------------------------------------------------------------------
+
+(defcustom mule--position-ring-max 10
+  "Number of position markers retained in the ring."
+  :type 'integer
+  :group 'mule)
+
+(defvar mule--position-ring nil
+  "List of markers recording previous cursor positions, most recent
+      first.")
+
+(defvar mule--position-index 0
+  "Current rotation offset into `mule--position-ring'.
+
+0 = most recent entry. Reset to 0 whenever a new position is
+recorded.")
+
+(defvar mule--last-tracked-state nil
+  "Cons cell (BUFFER . POINT) captured after the previous command.")
+
+(defun mule--track-position ()
+  "Record previous cursor position when point or buffer changes.
+    
+    Runs on `post-command-hook'. Independent of the mark ring and
+    region."
+  (unless (minibufferp)
+    (let ((now-buf (current-buffer))
+          (now-pt  (point)))
+      (when (and mule--last-tracked-state
+                 (or (not (eq (car mule--last-tracked-state) now-buf))
+                     (/= (cdr mule--last-tracked-state) now-pt)))
+        (let ((m (make-marker)))
+          (set-marker m (cdr mule--last-tracked-state)
+                      (car mule--last-tracked-state))
+          (push m mule--position-ring)
+          (when (> (length mule--position-ring) mule--position-ring-max)
+            (set-marker (car (last mule--position-ring)) nil)
+            (nbutlast mule--position-ring)))
+        (setq mule--position-index 0))
+      (setq mule--last-tracked-state (cons now-buf now-pt)))))
+
+(defun mule-jump-back ()
+  "Rotate to the next stored position in the ring and jump there.
+
+    Press repeatedly to cycle through the last `mule--position-ring-max'
+    recorded positions. Skips markers whose buffer has been killed."
+  (interactive)
+  (if (null mule--position-ring)
+      (user-error "No positions recorded yet")
+    (let ((ring-len (length mule--position-ring))
+          target skipped)
+      (cl-loop repeat ring-len
+               until target
+               do
+               (setq mule--position-index (1+ mule--position-index))
+               (when (>= mule--position-index ring-len)
+                 (setq mule--position-index 0))
+               (let* ((m (nth mule--position-index mule--position-ring))
+                      (buf (and m (marker-buffer m))))
+                 (if (and buf (> (marker-position m) 0))
+                     (setq target m)
+                   (cl-incf skipped))))
+      (if target
+          (progn
+            (pop-to-buffer (marker-buffer target))
+            (goto-char target)
+            (setq mule--last-tracked-state (cons (current-buffer) (point)))
+            (message "Position %d/%d"
+                     (1+ mule--position-index) ring-len))
+        (user-error "No valid positions in ring")))))
+
 (defun mule-goto-line ()
   "Go to line number."
   (interactive)
   (let ((target-line (read-number "Line: ")))
     (goto-char (point-min))
     (forward-line (1- target-line))))
+
+(defun mule-switch-other-buffer ()
+  "Switch to previous buffer."
+  (interactive)
+  (switch-to-buffer (other-buffer (current-buffer))))
+
+;;; ---------------------------------------------------------------------------
+;;; Indentation Commands
+;;; ---------------------------------------------------------------------------
 
 (defun mule-indent-region-or-line ()
   "Indent active region or current line."
@@ -453,13 +505,13 @@ commenting, then returns to the Org buffer."
       (indent-region (region-beginning) (region-end))
     (indent-region (line-beginning-position) (line-end-position))))
 
+;;; ---------------------------------------------------------------------------
+;;; Insert Entry Commands
+;;; ---------------------------------------------------------------------------
+
 (defun mule-enter-insert ()
   "Switch to INSERT state."
   (mule-insert-mode 1))
-
-(defun mule-enter-normal ()
-  "Switch to NORMAL state."
-  (mule-normal-mode 1))
 
 (defun mule-insert-after ()
   "Insert after current char - enters INSERT state."
@@ -511,15 +563,9 @@ commenting, then returns to the Org buffer."
     (delete-char 1)
     (mule-enter-insert)))
 
-(defun mule-delete ()
-  "Delete character or region."
-  (interactive)
-  (if (use-region-p)
-      (progn
-        (if (bound-and-true-p rectangle-mark-mode)
-            (call-interactively #'kill-rectangle)
-          (kill-region (mark) (point))))
-    (delete-char 1)))
+;;; ---------------------------------------------------------------------------
+;;; Yank and Delete Commands
+;;; ---------------------------------------------------------------------------
 
 (defun mule-yank ()
   "Yank clipboard content, includes replacing selected region."
@@ -539,83 +585,20 @@ commenting, then returns to the Org buffer."
         (yank-pop))
     (yank-pop)))
 
-(defun mule-switch-other-buffer ()
-  "Switch to previous buffer."
+(defun mule-delete ()
+  "Delete character or region."
   (interactive)
-  (switch-to-buffer (other-buffer (current-buffer))))
+  (if (use-region-p)
+      (progn
+        (if (bound-and-true-p rectangle-mark-mode)
+            (call-interactively #'kill-rectangle)
+          (kill-region (mark) (point))))
+    (delete-char 1)))
 
 ;;; ---------------------------------------------------------------------------
-;;; Mule Jump Back Functions
+;;; Mark and Text Object Selection Commands
 ;;; ---------------------------------------------------------------------------
-(defcustom mule--position-ring-max 10
-  "Number of position markers retained in the ring."
-  :type 'integer
-  :group 'mule)
 
-(defvar mule--position-ring nil
-  "List of markers recording previous cursor positions, most recent
-  first.")
-
-(defvar mule--position-index 0
-  "Current rotation offset into `mule--position-ring'. 0 = most
-  recent entry. Reset to 0 whenever a new position is recorded.")
-
-(defvar mule--last-tracked-state nil
-  "Cons cell (BUFFER . POINT) captured after the previous command.")
-
-(defun mule--track-position ()
-  "Record previous cursor position when point or buffer changes.
-  Runs on `post-command-hook'. Independent of the mark ring and
-  region."
-  (unless (minibufferp)
-    (let ((now-buf (current-buffer))
-          (now-pt  (point)))
-      (when (and mule--last-tracked-state
-                 (or (not (eq (car mule--last-tracked-state) now-buf))
-                     (/= (cdr mule--last-tracked-state) now-pt)))
-        (let ((m (make-marker)))
-          (set-marker m (cdr mule--last-tracked-state)
-                      (car mule--last-tracked-state))
-          (push m mule--position-ring)
-          (when (> (length mule--position-ring) mule--position-ring-max)
-            (set-marker (car (last mule--position-ring)) nil)
-            (nbutlast mule--position-ring)))
-        (setq mule--position-index 0))
-      (setq mule--last-tracked-state (cons now-buf now-pt)))))
-
-(defun mule-jump-back ()
-  "Rotate to the next stored position in the ring and jump there.
-  Press repeatedly to cycle through the last
-  `mule--position-ring-max' recorded positions. Skips markers whose
-  buffer has been killed."
-  (interactive)
-  (if (null mule--position-ring)
-      (user-error "No positions recorded yet")
-    (let ((ring-len (length mule--position-ring))
-          target skipped)
-      (cl-loop repeat ring-len
-               until target
-               do
-               (setq mule--position-index (1+ mule--position-index))
-               (when (>= mule--position-index ring-len)
-                 (setq mule--position-index 0))
-               (let* ((m (nth mule--position-index mule--position-ring))
-                      (buf (and m (marker-buffer m))))
-                 (if (and buf (> (marker-position m) 0))
-                     (setq target m)
-                   (cl-incf skipped))))
-      (if target
-          (progn
-            (pop-to-buffer (marker-buffer target))
-            (goto-char target)
-            (setq mule--last-tracked-state (cons (current-buffer) (point)))
-            (message "Position %d/%d"
-                     (1+ mule--position-index) ring-len))
-        (user-error "No valid positions in ring")))))
-
-;;; ---------------------------------------------------------------------------
-;;; Mark Visual Line Selection Functions
-;;; ---------------------------------------------------------------------------
 (defvar mule-visual-anchor nil
   "Anchor position for visual line selection.")
 
@@ -687,7 +670,6 @@ commenting, then returns to the Org buffer."
          (close-char nil)
          (start-pos nil)
          (end-pos nil))
-
     (setq close-char
           (cond
            ((= open-char ?\{) ?\})
@@ -707,7 +689,6 @@ commenting, then returns to the Org buffer."
            ((= open-char ?$) ?$)
            (t
             (error "Unsupported delimiter '%c'" open-char))))
-
     (if on-opener
         (setq start-pos (point))
       (if (and (char-after) (= (char-after) open-char))
@@ -716,22 +697,17 @@ commenting, then returns to the Org buffer."
             (setq start-pos (search-backward (string open-char) nil nil))
           (search-failed
            (error "No '%c' found near cursor" open-char)))))
-
     (goto-char (1+ start-pos))
-
     (condition-case nil
         (setq end-pos (search-forward (string close-char) nil nil))
       (search-failed
        (error "No matching '%c' found after cursor" close-char)))
-
     (push-mark (1+ start-pos))
     (goto-char (1- end-pos))
     (activate-mark)
-
     (when (>= (region-beginning) (region-end))
       (deactivate-mark)
       (error "Empty selection between %c and %c" open-char close-char))
-
     (message "Selected content for '%c'" open-char)))
 
 (defun mule-mark-outer ()
@@ -746,7 +722,6 @@ commenting, then returns to the Org buffer."
          (close-char nil)
          (start-pos nil)
          (end-pos nil))
-
     (setq close-char
           (cond
            ((= open-char ?\{) ?\})
@@ -766,7 +741,6 @@ commenting, then returns to the Org buffer."
            ((= open-char ?$) ?$)
            (t
             (error "Unsupported delimiter '%c'. Use: { [ ( < ' \" `" open-char))))
-
     (if on-opener
         (setq start-pos (point))
       (if (and (char-after) (= (char-after) open-char))
@@ -775,29 +749,25 @@ commenting, then returns to the Org buffer."
             (setq start-pos (search-backward (string open-char) nil nil))
           (search-failed
            (error "No '%c' found near cursor" open-char)))))
-
     (goto-char (1+ start-pos))
-
     (condition-case nil
         (setq end-pos (search-forward (string close-char) nil nil))
       (search-failed
        (error "No matching '%c' found after cursor" close-char)))
-
     (push-mark start-pos)
     (goto-char end-pos)
     (activate-mark)
-
     (when (>= (region-beginning) (region-end))
       (deactivate-mark)
       (error "Empty selection between %c and %c" open-char close-char))
-
     (message "Selected OUTER content including '%c'" open-char)))
 
 (defun mule-mark-sexp-inner ()
   "Mark content inside the balanced expression at point.
+
 Uses the syntax table to identify delimiters (parentheses,
-brackets, braces).  If point is on an opening or closing
-delimiter, marks content within that pair.  If point is inside
+brackets, braces). If point is on an opening or closing
+delimiter, marks content within that pair. If point is inside
 a pair, finds the enclosing delimiters and marks everything
 within, excluding the delimiters themselves."
   (interactive)
@@ -820,6 +790,7 @@ within, excluding the delimiters themselves."
 
 (defun mule-mark-sexp-outer ()
   "Mark the balanced expression at point, including delimiters.
+
 Uses the syntax table to identify delimiters (parentheses,
 brackets, braces).  If point is on a delimiter, marks that
 pair.  If point is inside a pair, finds the enclosing pair
@@ -846,10 +817,8 @@ and marks it including delimiters."
   (unless (and (char-after)
                (member (char-syntax (char-after)) '(?\w ?_)))
     (backward-word 1))
-
   (beginning-of-thing 'word)
   (mark-word)
-
   (message "Word marked"))
 
 (defun mule-mark-sentence ()
@@ -870,27 +839,25 @@ and marks it including delimiters."
 
 (defun mule-mark-symbol ()
   "Select the entire symbol at or adjacent to point.
+
 Trailing commas or periods are omitted from the selection."
   (interactive)
   (unless (and (char-after)
                (member (char-syntax (char-after)) '(?\w ?_)))
     (backward-sexp 1))
-
   (beginning-of-thing 'symbol)
   (forward-sexp 1)
-
   (while (memq (char-before) '(?, ?.))
     (backward-char 1))
-
   (push-mark (point) t)
   (backward-sexp 1)
   (activate-mark)
-
   (message "Symbol marked"))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mule Normal Mode Keymap Definition
 ;;; ---------------------------------------------------------------------------
+
 (defvar mule-normal-mode-map nil
   "Keymap for MULE Normal state.")
 
@@ -989,29 +956,28 @@ Trailing commas or periods are omitted from the selection."
 ;;; ---------------------------------------------------------------------------
 ;;; Mule Insert Mode Keymap Definition
 ;;; ---------------------------------------------------------------------------
-(defvar mule-insert-mode-map nil
-  "Keymap for MULE Insert state. Intentionally minimal: all keys
-  fall through to the major mode and global map, providing
-  unmodified Emacs behavior. The global ESC handler manages the
-  transition back to Normal state.")
 
+(defvar mule-insert-mode-map nil
+  "Keymap for MULE Insert state. Minimal keymap: all keys fall
+through to the major mode and global map, providing unmodified
+Emacs behavior. C-g is bound to `mule--exit-insert' to return
+to Normal state.")
 (when (null mule-insert-mode-map)
   (setq mule-insert-mode-map (make-sparse-keymap)))
-
-;; No key bindings here. The keymap is empty so that every key
-;; passes through to the active major mode and global keymap,
-;; replicating standard Emacs input behavior. The global ESC
-;; handler (bound via global-set-key) intercepts ESC to return
-;; to Normal state.
+;; C-g is bound later in the Insert to Normal Transition section.
+;; All other keys pass through to the active major mode and global
+;; keymap, replicating standard Emacs input behavior.
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mule Mode Definitions
 ;;; ---------------------------------------------------------------------------
+
 (define-minor-mode mule-normal-mode
   "MULE Normal state - modal navigation and editing.
+
 Each buffer maintains its own MULE state independently. When
-enabled, `mule-insert-mode' is automatically disabled and
-vice versa."
+enabled, `mule-insert-mode' is automatically disabled and vice
+versa."
   :group 'mule
   :lighter " MULE[N]"
   :keymap mule-normal-mode-map
@@ -1021,8 +987,9 @@ vice versa."
 
 (define-minor-mode mule-insert-mode
   "MULE Insert state - passthrough to standard Emacs input.
-All keys fall through to the major mode and global keymap.
-Press ESC to return to Normal state."
+
+All keys fall through to the major mode and global keymap. Press C-g
+to return to Normal state."
   :group 'mule
   :lighter " MULE[I]"
   :keymap mule-insert-mode-map
@@ -1031,19 +998,22 @@ Press ESC to return to Normal state."
       (mule-normal-mode -1))))
 
 ;;; ---------------------------------------------------------------------------
-;;; Cursor Management (Per-Buffer, Enforced via Hook)
+;;; Cursor Management
 ;;; ---------------------------------------------------------------------------
+
 (defcustom mule-cursor-normal 'box
-  "Cursor shape when MULE Normal state is active. Set to nil to fall
-back to global `cursor-type'."
+  "Cursor shape when MULE Normal state is active.
+
+Set to nil to fall back to global `cursor-type'."
   :type '(choice (const box) (const bar) (const hollow)
                  (cons symbol integer)
                  (const :tag "Use Global Default" nil))
   :group 'mule)
 
 (defcustom mule-cursor-insert '(bar . 2)
-  "Cursor shape when MULE Insert state is active. Set to nil to fall
-back to global `cursor-type'."
+  "Cursor shape when MULE Insert state is active.
+
+Set to nil to fall back to global `cursor-type'."
   :type '(choice (const box) (const bar) (const hollow)
                  (cons symbol integer)
                  (const :tag "Use Global Default" nil))
@@ -1071,10 +1041,12 @@ back to global `cursor-type'."
 ;;; ---------------------------------------------------------------------------
 ;;; Mule Minibuffer Safety
 ;;; ---------------------------------------------------------------------------
+
 (defvar mule--minibuffer-pre-state nil
-  "Track MULE state before entering minibuffer. Value is \='normal,
-\='insert, or nil. Not buffer-local because we need to read it after
-switching buffers.")
+  "Track MULE state before entering minibuffer.
+
+Value is \='normal, \='insert, or nil. Not buffer-local because we
+need to read it after switching buffers.")
 
 (defun mule--minibuffer-current-state ()
   "Return the current MULE state as a symbol."
@@ -1082,7 +1054,6 @@ switching buffers.")
    ((bound-and-true-p mule-normal-mode) 'normal)
    ((bound-and-true-p mule-insert-mode) 'insert)
    (t nil)))
-
 (add-hook 'minibuffer-setup-hook
           (lambda ()
             ;; Capture state from the buffer that initiated the minibuffer
@@ -1094,7 +1065,6 @@ switching buffers.")
             ;; Force insert mode (passthrough) in the minibuffer itself
             (when (bound-and-true-p mule-normal-mode)
               (mule-normal-mode -1))))
-
 (add-hook 'minibuffer-exit-hook
           (lambda ()
             ;; Restore state in the originating buffer
@@ -1106,68 +1076,177 @@ switching buffers.")
             (setq mule--minibuffer-pre-state nil)))
 
 ;;; ---------------------------------------------------------------------------
-  ;;; Insert to Normal Transition
-  ;;; ---------------------------------------------------------------------------
-;; C-g enters normal mode from insert state.
-;; In normal state, C-g acts as standard keyboard-quit.
-;; Preserves C-level interrupt for running commands.
+;;; Insert to Normal Transition
+;;; ---------------------------------------------------------------------------
+
+(defvar-local mule--deferred-overlay-cleanup-timer nil
+  "Buffer-local timer for deferred overlay cleanup after exiting
+insert mode.")
+
+(defvar-local mule--just-exited-from-insert nil
+  "Buffer-local guard set when exiting insert mode.
+
+Reset on next command to prevent re-entry race conditions.")
+
+(defun mule-enter-normal ()
+  "Switch to NORMAL state."
+  (interactive)
+  (mule-normal-mode 1))
+
+(defun mule--clear-transient-overlays ()
+  "Clear transient overlays left by highlighting packages.
+
+Same as before - handles all known overlay systems."
+  (let ((cleared 0)
+        (transient-faces
+         '(sp-show-pair-match-face
+           sp-show-pair-mismatch-face
+           show-paren-match
+           show-paren-mismatch
+           hl-paren-face)))
+    ;; Strategy 1: Direct variable access
+    (when (boundp 'sp-show-pair-overlay-list)
+      (dolist (ov sp-show-pair-overlay-list)
+        (when (and (overlayp ov) (overlay-start ov))
+          (delete-overlay ov)
+          (setq cleared (1+ cleared)))))
+    (when (and (boundp 'sp-overlay)
+               (overlayp sp-overlay)
+               (overlay-start sp-overlay))
+      (delete-overlay sp-overlay)
+      (setq cleared (1+ cleared)))
+    (when (boundp 'show-paren--overlay)
+      (when (and (overlayp show-paren--overlay)
+                 (overlay-start show-paren--overlay))
+        (delete-overlay show-paren--overlay)
+        (setq cleared (1+ cleared))))
+    (when (boundp 'highlight-parentheses--overlays)
+      (dolist (ov highlight-parentheses--overlays)
+        (when (and (overlayp ov) (overlay-start ov))
+          (delete-overlay ov)
+          (setq cleared (1+ cleared)))))
+    ;; Strategy 2: Buffer-wide scan (catches everything else)
+    (dolist (ov (overlays-in (point-min) (point-max)))
+      (let ((ov-start (overlay-start ov)))
+        (when ov-start
+          (let ((face (overlay-get ov 'face)))
+            (when (or (overlay-get ov 'mule-modal-cleanup)
+                      (and face
+                           (cond
+                            ((symbolp face)
+                             (memq face transient-faces))
+                            ((consp face)
+                             (cl-some (lambda (f) (memq f transient-faces))
+                                      face)))))
+              (delete-overlay ov)
+              (setq cleared (1+ cleared)))))))
+    ;; Strategy 3: Remove overlays carrying smartparens keymap properties.
+    ;; These pair overlays survive the face scan because they may use
+    ;; non-transient faces, but their keymap property intercepts C-g.
+    (dolist (ov (overlays-in (point-min) (point-max)))
+      (let ((ov-start (overlay-start ov)))
+        (when ov-start
+          (let ((km (overlay-get ov 'keymap)))
+            (when (and km
+                       (or (and (boundp 'sp-pair-overlay-keymap)
+                                (eq km sp-pair-overlay-keymap))
+                           (and (boundp 'sp-overlay-keymap)
+                                (eq km sp-overlay-keymap))))
+              (delete-overlay ov)
+              (setq cleared (1+ cleared)))))))
+    cleared))
+
+(defun mule--schedule-overlay-cleanup ()
+  "Schedule deferred cleanup for overlays created by post-command hooks."
+  (when mule--deferred-overlay-cleanup-timer
+    (cancel-timer mule--deferred-overlay-cleanup-timer))
+  (let ((buf (current-buffer)))
+    (setq mule--deferred-overlay-cleanup-timer
+          (run-with-idle-timer
+           0.01 nil
+           (lambda ()
+             (when (buffer-live-p buf)
+               (with-current-buffer buf
+                 (mule--clear-transient-overlays)
+                 (setq mule--deferred-overlay-cleanup-timer nil))))))))
+
 (defun mule--exit-insert ()
-  "Exit insert state and enter normal mode. Removes active mark,
-  enters normal mode, and verifies the transition succeeded. In the
-  minibuffer, delegates to `keyboard-quit' insetad."
+  "Exit insert state and enter normal mode.
+
+Keymap-bound handler that ensures C-g always routes through
+mule-modal logic, not raw keyboard-quit."
   (interactive)
   (if (minibufferp)
       (keyboard-quit)
     (deactivate-mark)
+    (mule--clear-transient-overlays)
     (mule-enter-normal)
     (unless (bound-and-true-p mule-normal-mode)
-      (mule-normal-mode 1))))
+      (mule-normal-mode 1))
+    (mule--schedule-overlay-cleanup)))
+
+(defun mule--reset-exit-guard ()
+  "Reset the exit guard on next command.
+
+Allows re-entry of insert mode without guard interference."
+  (setq mule--just-exited-from-insert nil)
+  (remove-hook 'pre-command-hook #'mule--reset-exit-guard))
 
 (defun mule--intercept-quit-in-insert ()
-  "Intercept C-g in insert mode by raw key event.
-  Bypasses all keymap priority issues — checks the actual key
-  pressed, not which command it resolved to. Sets this-command to
-  ignore so smartparens' overlay handler does not run."
-  (when (and (bound-and-true-p mule-insert-mode)
-             (not (minibufferp))
-             (equal (this-single-command-keys) [7]))
-    (setq this-command 'ignore)
-    (deactivate-mark)
-    (mule-enter-normal)
-    (unless (bound-and-true-p mule-normal-mode)
-      (mule-normal-mode 1))))
+  "Backup handler for when C-g is bound by another package.
 
+Pre-command hook fires before keymap resolution, so we can
+override C-g behavior even if smartparens or other packages
+also bind it. Sets mule--just-exited-from-insert guard."
+  (when (and (bound-and-true-p mule-insert-mode)
+             (not mule--just-exited-from-insert)
+             (not (minibufferp))
+             (or (equal (this-single-command-keys) [7])
+                 (eq this-command 'sp-cancel)))
+    (setq this-command 'ignore
+          mule--just-exited-from-insert t)
+    (add-hook 'pre-command-hook #'mule--reset-exit-guard -100)
+    (mule--exit-insert)))
+
+;; === KEYMAP BINDING (THE FIX) ===
+;; Bind C-g directly in insert mode map - this makes it a COMMAND
+;; rather than letting it fall through to keyboard-quit (raw signal)
+(keymap-set mule-insert-mode-map "C-g" #'mule--exit-insert)
+;; Pre-command hook remains as backup for packages that override C-g
 (add-hook 'pre-command-hook #'mule--intercept-quit-in-insert)
 
-(keymap-set mule-insert-mode-map "C-g" #'mule--exit-insert)
-
-;; (defvar smartparens-mode-map nil
-;; "Keymap for smartparens-mode. Declared here to silence byte-compiler.")
-
-;; (with-eval-after-load 'smartparens
-;;   (keymap-set smartparens-mode-map "C-g" #'mule--exit-insert))
-
 (defun mule--setup-smartparens-integration ()
-  "Configure C-g handler in smartparens-mode-map.
-Safely checks for existence and validity of smartparens-mode-map
-before attempting modification."
+  "Configure C-g handler in all smartparens keymaps.
+
+Binds C-g in `smartparens-mode-map' (minor-mode), and critically
+in `sp-pair-overlay-keymap' and `sp-overlay-keymap' (overlay
+keymaps). Overlay keymaps have higher priority than minor-mode
+keymaps, so without these bindings C-g is caught by sp-cancel when
+pair overlays are active (e.g. inside nested parens)."
   (when (and (boundp 'smartparens-mode-map)
              (keymapp smartparens-mode-map))
-    (keymap-set smartparens-mode-map "C-g" #'mule--exit-insert)))
+    (keymap-set smartparens-mode-map "C-g" #'mule--exit-insert))
+  ;; Overlay keymaps — these beat minor-mode maps in lookup order
+  (when (and (boundp 'sp-pair-overlay-keymap)
+             (keymapp sp-pair-overlay-keymap))
+    (keymap-set sp-pair-overlay-keymap "C-g" #'mule--exit-insert))
+  (when (and (boundp 'sp-overlay-keymap)
+             (keymapp sp-overlay-keymap))
+    (keymap-set sp-overlay-keymap "C-g" #'mule--exit-insert)))
 
-;; Register deferred setup when smartparens loads
 (with-eval-after-load 'smartparens
   (mule--setup-smartparens-integration))
 
-;; If smartparens already loaded, setup immediately
 (when (featurep 'smartparens)
   (mule--setup-smartparens-integration))
 
-;; end of test
+;;; ---------------------------------------------------------------------------
+;;; Input Method Management
+;;; ---------------------------------------------------------------------------
 
 (defvar-local mule--saved-input-method nil
   "Buffer-local saved input method name for restoration on Insert
-  entry.")
+entry.")
 
 (defun mule--on-normal-entry ()
   "Deactivate input method when entering Normal state."
@@ -1198,11 +1277,12 @@ before attempting modification."
 ;;; ---------------------------------------------------------------------------
 ;;; Exclusion Mode Safeguards
 ;;; ---------------------------------------------------------------------------
+
 (defvar mule--excluded-modes
   '(ibuffer-mode eshell-mode term-mode vterm-mode dired-mode comint-mode magit-status-mode)
   "Major modes where MULE Normal state should be permanently
-    disabled. In these modes, MULE Insert state (passthrough) is
-    used instead, keeping MULE active but non-interfering.")
+disabled. In these modes, MULE Insert state (passthrough) is used
+instead, keeping MULE active but non-interfering.")
 
 (dolist (mode mule--excluded-modes)
   (let ((hook (intern (format "%s-hook" mode))))
@@ -1224,11 +1304,11 @@ before attempting modification."
 ;;; ---------------------------------------------------------------------------
 ;;; Enhanced Mode Activation Logic
 ;;; ---------------------------------------------------------------------------
+
 (defun mule--ensure-default-state ()
   "Enable MULE Normal state unless the current major mode is
 excluded. For excluded modes, enable MULE Insert state
 (passthrough) instead.
-
 Returns non-nil if MULE was enabled."
   (let ((is-excluded-p
          (or (memq major-mode mule--excluded-modes)
@@ -1247,8 +1327,10 @@ Returns non-nil if MULE was enabled."
 ;;; ---------------------------------------------------------------------------
 ;;; Mode Indicator
 ;;; ---------------------------------------------------------------------------
+
 (defun mule-indicator ()
   "Return state indicator string for modeline.
+
 Returns ' MULE[N]' for Normal, ' MULE[I]' for Insert, empty string
 otherwise. Useful if you build your own mode-line and want to
 include the MULE state."
@@ -1260,15 +1342,17 @@ include the MULE state."
 ;;; ---------------------------------------------------------------------------
 ;;; Global Mode Toggle
 ;;; ---------------------------------------------------------------------------
+
 (define-minor-mode mule-modal
   "Toggle MULE Modal Editing globally.
+    
+When enabled, MULE activates its dual-state system (Normal/Insert)
+in all buffers. Buffers whose major mode is in
+`mule--excluded-modes' fall back to Insert state (passthrough).
 
-When enabled, MULE activates its dual-state system (Normal/Insert) in
-all buffers. Buffers whose major mode is in `mule--excluded-modes'
-fall back to Insert state (passthrough). When disabled, all MULE state
-is cleared from every buffer and standard Emacs behavior is restored.
-
-\\[mule-modal] or `M-x mule-modal' to toggle."
+When disabled, all MULE state is cleared from every buffer and
+standard Emacs behavior is restored. \\[mule-modal] or `M-x
+mule-modal' to toggle."
   :global t
   :group 'mule
   (if mule-modal
@@ -1291,6 +1375,7 @@ is cleared from every buffer and standard Emacs behavior is restored.
 ;;; ---------------------------------------------------------------------------
 ;;; Provide
 ;;; ---------------------------------------------------------------------------
+
 (provide 'mule-modal)
 
 ;;; mule-modal.el ends here
