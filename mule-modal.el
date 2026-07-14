@@ -35,6 +35,7 @@
 ;; - State indicators show in modeline: MULE[N] = Normal, MULE[I] = Insert.
 
 ;;; Code:
+
 (require 'thingatpt) ;(mule-mark-word)
 (eval-and-compile
   (declare-function org-open-at-point "org")     ;(mule-enter-dwim)
@@ -43,6 +44,9 @@
   (declare-function org-edit-special "org")      ;(mule-comment-dwim)
   (defvar mule-normal-mode-map nil)
   (defvar mule-insert-mode-map nil))
+
+(defvar this-single-command-keys)              ;(mule--intercept-quit-in-insert)
+(defvar this-command)                          ;(mule--intercept-quit-in-insert)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Clipboard Integration (Wayland/X11)
@@ -434,8 +438,8 @@ recorded.")
 (defun mule--track-position ()
   "Record previous cursor position when point or buffer changes.
     
-    Runs on `post-command-hook'. Independent of the mark ring and
-    region."
+Runs on `post-command-hook'. Independent of the mark ring and
+region."
   (unless (minibufferp)
     (let ((now-buf (current-buffer))
           (now-pt  (point)))
@@ -455,8 +459,8 @@ recorded.")
 (defun mule-jump-back ()
   "Rotate to the next stored position in the ring and jump there.
 
-    Press repeatedly to cycle through the last `mule--position-ring-max'
-    recorded positions. Skips markers whose buffer has been killed."
+Press repeatedly to cycle through the last `mule--position-ring-max'
+recorded positions. Skips markers whose buffer has been killed."
   (interactive)
   (if (null mule--position-ring)
       (user-error "No positions recorded yet")
@@ -1079,31 +1083,30 @@ need to read it after switching buffers.")
 ;;; Insert to Normal Transition
 ;;; ---------------------------------------------------------------------------
 
-(defvar-local mule--deferred-overlay-cleanup-timer nil
-  "Buffer-local timer for deferred overlay cleanup after exiting
-insert mode.")
-
-(defvar-local mule--just-exited-from-insert nil
-  "Buffer-local guard set when exiting insert mode.
-
-Reset on next command to prevent re-entry race conditions.")
-
 (defun mule-enter-normal ()
   "Switch to NORMAL state."
   (interactive)
   (mule-normal-mode 1))
 
+(defvar-local mule--deferred-overlay-cleanup-timer nil
+  "Buffer-local timer for deferred overlay cleanup after exiting insert mode.")
+
+(defvar-local mule--just-exited-from-insert nil
+  "Buffer-local guard set when exiting insert mode.
+      Reset on next command to prevent re-entry race conditions.")
+
 (defun mule--clear-transient-overlays ()
   "Clear transient overlays left by highlighting packages.
-
-Same as before - handles all known overlay systems."
+Operates on the current buffer only."
   (let ((cleared 0)
         (transient-faces
          '(sp-show-pair-match-face
            sp-show-pair-mismatch-face
            show-paren-match
            show-paren-mismatch
-           hl-paren-face)))
+           hl-paren-face))
+        (beg (point-min))
+        (end (point-max)))
     ;; Strategy 1: Direct variable access
     (when (boundp 'sp-show-pair-overlay-list)
       (dolist (ov sp-show-pair-overlay-list)
@@ -1125,35 +1128,30 @@ Same as before - handles all known overlay systems."
         (when (and (overlayp ov) (overlay-start ov))
           (delete-overlay ov)
           (setq cleared (1+ cleared)))))
-    ;; Strategy 2: Buffer-wide scan (catches everything else)
-    (dolist (ov (overlays-in (point-min) (point-max)))
-      (let ((ov-start (overlay-start ov)))
-        (when ov-start
-          (let ((face (overlay-get ov 'face)))
-            (when (or (overlay-get ov 'mule-modal-cleanup)
-                      (and face
-                           (cond
-                            ((symbolp face)
-                             (memq face transient-faces))
-                            ((consp face)
-                             (cl-some (lambda (f) (memq f transient-faces))
-                                      face)))))
-              (delete-overlay ov)
-              (setq cleared (1+ cleared)))))))
-    ;; Strategy 3: Remove overlays carrying smartparens keymap properties.
-    ;; These pair overlays survive the face scan because they may use
-    ;; non-transient faces, but their keymap property intercepts C-g.
-    (dolist (ov (overlays-in (point-min) (point-max)))
-      (let ((ov-start (overlay-start ov)))
-        (when ov-start
-          (let ((km (overlay-get ov 'keymap)))
-            (when (and km
-                       (or (and (boundp 'sp-pair-overlay-keymap)
-                                (eq km sp-pair-overlay-keymap))
-                           (and (boundp 'sp-overlay-keymap)
-                                (eq km sp-overlay-keymap))))
-              (delete-overlay ov)
-              (setq cleared (1+ cleared)))))))
+    ;; Strategy 2: Buffer-wide scan for transient faces
+    (dolist (ov (overlays-in beg end))
+      (when (overlay-start ov)
+        (let ((face (overlay-get ov 'face)))
+          (when (or (overlay-get ov 'mule-modal-cleanup)
+                    (and face
+                         (cond
+                          ((symbolp face)
+                           (memq face transient-faces))
+                          ((consp face)
+                           (cl-some (lambda (f) (memq f transient-faces)) face)))))
+            (delete-overlay ov)
+            (setq cleared (1+ cleared))))))
+    ;; Strategy 3: Remove overlays carrying smartparens keymap properties
+    (dolist (ov (overlays-in beg end))
+      (when (overlay-start ov)
+        (let ((km (overlay-get ov 'keymap)))
+          (when (and km
+                     (or (and (boundp 'sp-pair-overlay-keymap)
+                              (eq km sp-pair-overlay-keymap))
+                         (and (boundp 'sp-overlay-keymap)
+                              (eq km sp-overlay-keymap))))
+            (delete-overlay ov)
+            (setq cleared (1+ cleared))))))
     cleared))
 
 (defun mule--schedule-overlay-cleanup ()
@@ -1170,63 +1168,46 @@ Same as before - handles all known overlay systems."
                  (mule--clear-transient-overlays)
                  (setq mule--deferred-overlay-cleanup-timer nil))))))))
 
-(defun mule--exit-insert ()
-  "Exit insert state and enter normal mode.
+(defun mule--reset-exit-guard ()
+  "Reset the exit guard on next command. Allows re-entry of insert mode."
+  (setq mule--just-exited-from-insert nil)
+  (remove-hook 'pre-command-hook #'mule--reset-exit-guard))
 
-Keymap-bound handler that ensures C-g always routes through
-mule-modal logic, not raw keyboard-quit."
+(defun mule--exit-insert ()
+  "Exit insert state and enter normal mode. Removes active mark,
+enters normal mode, and schedules deferred overlay cleanup.
+In the minibuffer, delegates to `keyboard-quit'."
   (interactive)
   (if (minibufferp)
       (keyboard-quit)
     (deactivate-mark)
-    (mule--clear-transient-overlays)
     (mule-enter-normal)
     (unless (bound-and-true-p mule-normal-mode)
       (mule-normal-mode 1))
     (mule--schedule-overlay-cleanup)))
 
-(defun mule--reset-exit-guard ()
-  "Reset the exit guard on next command.
-
-Allows re-entry of insert mode without guard interference."
-  (setq mule--just-exited-from-insert nil)
-  (remove-hook 'pre-command-hook #'mule--reset-exit-guard))
-
 (defun mule--intercept-quit-in-insert ()
-  "Backup handler for when C-g is bound by another package.
-
-Pre-command hook fires before keymap resolution, so we can
-override C-g behavior even if smartparens or other packages
-also bind it. Sets mule--just-exited-from-insert guard."
+  "Intercept C-g in insert mode by raw key event or sp-cancel command.
+Calls `mule--exit-insert' directly to ensure state transition occurs."
   (when (and (bound-and-true-p mule-insert-mode)
              (not mule--just-exited-from-insert)
              (not (minibufferp))
-             (or (equal (this-single-command-keys) [7])
+             (or (and (boundp 'this-single-command-keys)
+                      (equal this-single-command-keys [7]))
                  (eq this-command 'sp-cancel)))
     (setq this-command 'ignore
           mule--just-exited-from-insert t)
     (add-hook 'pre-command-hook #'mule--reset-exit-guard -100)
     (mule--exit-insert)))
 
-;; === KEYMAP BINDING (THE FIX) ===
-;; Bind C-g directly in insert mode map - this makes it a COMMAND
-;; rather than letting it fall through to keyboard-quit (raw signal)
-(keymap-set mule-insert-mode-map "C-g" #'mule--exit-insert)
-;; Pre-command hook remains as backup for packages that override C-g
-(add-hook 'pre-command-hook #'mule--intercept-quit-in-insert)
-
 (defun mule--setup-smartparens-integration ()
   "Configure C-g handler in all smartparens keymaps.
-
-Binds C-g in `smartparens-mode-map' (minor-mode), and critically
-in `sp-pair-overlay-keymap' and `sp-overlay-keymap' (overlay
-keymaps). Overlay keymaps have higher priority than minor-mode
-keymaps, so without these bindings C-g is caught by sp-cancel when
-pair overlays are active (e.g. inside nested parens)."
+          Binds C-g in smartparens-mode-map AND overlay keymaps
+          (sp-pair-overlay-keymap, sp-overlay-keymap). Overlay keymaps
+          have higher priority than minor-mode maps."
   (when (and (boundp 'smartparens-mode-map)
              (keymapp smartparens-mode-map))
     (keymap-set smartparens-mode-map "C-g" #'mule--exit-insert))
-  ;; Overlay keymaps — these beat minor-mode maps in lookup order
   (when (and (boundp 'sp-pair-overlay-keymap)
              (keymapp sp-pair-overlay-keymap))
     (keymap-set sp-pair-overlay-keymap "C-g" #'mule--exit-insert))
@@ -1239,6 +1220,12 @@ pair overlays are active (e.g. inside nested parens)."
 
 (when (featurep 'smartparens)
   (mule--setup-smartparens-integration))
+
+;; Bind C-g directly in insert mode map
+(keymap-set mule-insert-mode-map "C-g" #'mule--exit-insert)
+
+;; Pre-command hook backup for packages that override C-g
+(add-hook 'pre-command-hook #'mule--intercept-quit-in-insert)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Input Method Management
