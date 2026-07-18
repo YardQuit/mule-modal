@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo 2.0 Max
 ;; URL: https://github.com/yardquit/mule-modal
-;; Version: 2.7
+;; Version: 2.8
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/mule-modal
@@ -199,119 +199,6 @@ documentation."
     (display-buffer buf)))
 
 ;;; ---------------------------------------------------------------------------
-;;; DWIM Commands
-;;; ---------------------------------------------------------------------------
-
-(defvar mule-editing-modes
-  '(prog-mode text-mode org-mode fundamental-mode conf-mode markdown-mode gfm-mode)
-  "Major modes where Enter should be blocked to prevent accidental
-line breaks.")
-
-(defun mule--editing-mode-p ()
-  "Return non-nil if current major mode is in `mule-editing-modes'."
-  (member major-mode mule-editing-modes))
-
-(defun mule--org-enter-handler ()
-  "Handle Enter in Org mode: follow links except src-blocks."
-  (when (and (eq major-mode 'org-mode)
-             (fboundp 'org-element-at-point)
-             (fboundp 'org-open-at-point))
-    (let ((elem (org-element-at-point)))
-      (when (and elem (not (eq (car elem) 'src-block)))
-        'org-open-at-point))))
-
-(defun mule--markdown-enter-handler ()
-  "Handle Enter in Markdown mode: follow links/buttons."
-  (when (memq major-mode '(markdown-mode gfm-mode))
-    (cond
-     ((fboundp 'markdown-follow-thing-at-point)
-      'markdown-follow-thing-at-point)
-     ((fboundp 'shr-follow-link-at-point)
-      'shr-follow-link-at-point)
-     (t
-      'browse-url-at-point))))
-
-(defun mule--non-editing-enter-handler ()
-  "Handle Enter in non-editing modes (Info, Dired, etc.):
-Return the native RET binding if it's not a prefix key."
-  (unless (mule--editing-mode-p)
-    (let ((native-ret (lookup-key (current-local-map) (kbd "RET"))))
-      (when (and native-ret
-                 (not (eq native-ret 'undefined))
-                 (not (keymapp native-ret)))
-        native-ret))))
-
-(defun mule-enter-dwim ()
-  "Smart Return handler for MULE Normal State."
-  (interactive)
-  (let ((follow-cmd nil))
-    (setq follow-cmd (or (mule--org-enter-handler)
-                         (mule--markdown-enter-handler)
-                         (mule--non-editing-enter-handler)))
-    (when follow-cmd
-      (call-interactively follow-cmd))))
-
-(defun mule--in-org-src-block-p ()
-  "Return non-nil if point is inside an Org source block."
-  (and (eq major-mode 'org-mode)
-       (fboundp 'org-element-at-point)
-       (let ((elem (org-element-at-point)))
-         (and (consp elem) (eq (car elem) 'src-block)))))
-
-(defun mule-comment-dwim ()
-  "Comment/uncomment whole lines in region, or current line if no
-region.
-
-When inside an Org source block, delegates to the block's native
-major mode via `org-edit-special' for language-aware commenting,
-then returns to the Org buffer."
-  (interactive)
-  (cond
-   ((mule--in-org-src-block-p)
-    (let ((has-region (use-region-p))
-          (cur-line (line-number-at-pos))
-          (reg-beg-line (when (use-region-p)
-                          (line-number-at-pos (region-beginning))))
-          (reg-end-line (when (use-region-p)
-                          (line-number-at-pos (region-end)))))
-      (condition-case err
-          (progn
-            (org-edit-special)
-            (if has-region
-                (let* ((cur-line-in-edit (line-number-at-pos))
-                       (diff (- cur-line-in-edit cur-line))
-                       (edit-beg-line (+ reg-beg-line diff))
-                       (edit-end-line (+ reg-end-line diff)))
-                  (save-excursion
-                    (goto-char (point-min))
-                    (forward-line (1- edit-beg-line))
-                    (let ((beg (line-beginning-position)))
-                      (forward-line (- edit-end-line edit-beg-line))
-                      (comment-or-uncomment-region
-                       beg (line-beginning-position 2)))))
-              (comment-or-uncomment-region
-               (line-beginning-position)
-               (line-beginning-position 2)))
-            (org-edit-src-exit)
-            (when has-region (deactivate-mark)))
-        (error
-         (message "mule-comment-dwim (org-src): %s"
-                  (error-message-string err))))))
-   (t
-    (if (use-region-p)
-        (let ((beg (save-excursion
-                     (goto-char (region-beginning))
-                     (line-beginning-position)))
-              (end (save-excursion
-                     (goto-char (region-end))
-                     (if (bolp) (point) (line-beginning-position 2)))))
-          (comment-or-uncomment-region beg end))
-      (comment-or-uncomment-region
-       (line-beginning-position)
-       (line-beginning-position 2)))
-    (deactivate-mark))))
-
-;;; ---------------------------------------------------------------------------
 ;;; Line and Buffer Navigation Commands
 ;;; ---------------------------------------------------------------------------
 
@@ -469,6 +356,222 @@ recorded positions. Skips markers whose buffer has been killed."
         (mule-enter-insert))
     (delete-char 1)
     (mule-enter-insert)))
+
+(defun mule-org-todo ()
+  "Toggle headline TODO state between TODO and DONE.
+Uses `org-element-at-point' to detect :todo-type property and
+dispatches `org-todo' accordingly. No keyword string parsing needed."
+  (interactive)
+  (when (and (fboundp 'org-element-at-point)
+             (fboundp 'org-element-property)
+             (fboundp 'org-todo))
+    (let* ((elem (org-element-at-point))
+           (todo-type (and (consp elem)
+                           (eq (car elem) 'headline)
+                           (org-element-property :todo-type elem))))
+      (cond
+       ((eq todo-type 'todo)
+        (org-todo 'done))
+       ((eq todo-type 'done)
+        (org-todo 'todo))
+       (t
+        (org-todo 'todo))))))
+
+;;; ---------------------------------------------------------------------------
+;;; DWIM Commands
+;;; ---------------------------------------------------------------------------
+
+(defvar mule--enter-rules nil
+  "List of (ELEMENT-TYPE PROPERTY COMMAND1 COMMAND2 ...) for ENTER DWIM dispatch.")
+
+(defvar-local mule--saved-ret-binding nil
+  "Saved RET binding from buffer's local map when entering MULE Normal.")
+
+(defvar mule-editing-modes
+  '(prog-mode text-mode org-mode fundamental-mode conf-mode markdown-mode gfm-mode)
+  "Major modes where Enter should be blocked to prevent accidental line breaks.")
+
+(defun mule--editing-mode-p ()
+  "Return non-nil if current major mode is in `mule-editing-modes'."
+  (member major-mode mule-editing-modes))
+
+(defun mule--register-enter-rule (rule)
+  "Register RULE for ENTER DWIM dispatch."
+  (add-to-list 'mule--enter-rules rule t))
+
+(defmacro mule-add-enter-rule (element-type property &rest commands)
+  "Add an ENTER rule with property check and command fallback chain."
+  (declare (indent 2))
+  `(mule--register-enter-rule '(,element-type ,property ,@commands)))
+
+(defcustom mule-default-enter-rules-enabled t
+  "If non-nil, install default ENTER rules on load.
+  Set to nil in `config.el' if you want to define rules manually."
+  :type 'boolean
+  :group 'mule)
+
+(defun mule--find-enter-handler ()
+  "Find command for Enter key based on element at point.
+Checks context first, then parent, then ancestors — always trying all rules
+against more specific elements before broader ancestors.
+Returns command symbol or nil if no handler matches."
+  (let* ((parent (and (fboundp 'org-element-at-point)
+                      (org-element-at-point)))
+         (ctx (and (fboundp 'org-element-context)
+                   (org-element-context)))
+         (ancestors (and parent
+                         (fboundp 'org-element-lineage)
+                         (org-element-lineage parent)))
+         (result nil))
+    ;; Context FIRST (inline elements like links within tables/headlines)
+    (dolist (rule mule--enter-rules)
+      (when (null result)
+        (let ((rule-type (nth 0 rule))
+              (rule-cmds (nthcdr 2 rule)))
+          (when (and ctx
+                     (eq (car ctx) rule-type)
+                     (null (nth 1 rule)))
+            (dolist (candidate rule-cmds)
+              (when (and (null result)
+                         (fboundp candidate)
+                         (commandp candidate))
+                (setq result candidate)))))))
+    ;; Parent, then ancestors — ALL rules checked per element level
+    (dolist (elem (cons parent ancestors))
+      (when (null result)
+        (dolist (rule mule--enter-rules)
+          (when (null result)
+            (let ((rule-type (nth 0 rule))
+                  (rule-prop (nth 1 rule))
+                  (rule-cmds (nthcdr 2 rule)))
+              (when (and elem
+                         (eq (car elem) rule-type)
+                         (or (null rule-prop)
+                             (and (fboundp 'org-element-property)
+                                  (org-element-property rule-prop elem))))
+                (dolist (candidate rule-cmds)
+                  (when (and (null result)
+                             (fboundp candidate)
+                             (commandp candidate))
+                    (setq result candidate)))))))))
+    result))
+
+(defun mule--execute-handler (cmd)
+  "Execute CMD if it exists and is callable."
+  (when (and cmd (fboundp cmd) (commandp cmd))
+    (call-interactively cmd)))
+
+(defun mule--org-agenda-enter-handler ()
+  "Handle Enter in org-agenda mode. Returns t if handled, nil otherwise."
+  (when (and (fboundp 'org-agenda-mode-p)
+             (boundp 'org-agenda-mode-map)
+             (org-agenda-mode-p))
+    (let ((ret-cmd (lookup-key org-agenda-mode-map (kbd "RET"))))
+      (when (and ret-cmd
+                 (not (eq ret-cmd 'undefined))
+                 (commandp ret-cmd))
+        (call-interactively ret-cmd)
+        t))))
+
+(defun mule--org-mode-enter-handler ()
+  "Handle Enter in org-mode and markdown modes. Returns t if handled."
+  (when (or (eq major-mode 'org-mode)
+            (eq major-mode 'markdown-mode)
+            (eq major-mode 'gfm-mode))
+    (let ((handler (mule--find-enter-handler)))
+      (when handler
+        (mule--execute-handler handler)
+        t))))
+
+(defun mule--non-editing-enter-handler ()
+  "Handle Enter in non-editing modes. Returns t if handled."
+  (unless (mule--editing-mode-p)
+    (when (and mule--saved-ret-binding
+               (not (eq mule--saved-ret-binding 'undefined))
+               (not (keymapp mule--saved-ret-binding))
+               (commandp mule--saved-ret-binding))
+      (call-interactively mule--saved-ret-binding)
+      t)))
+
+(when mule-default-enter-rules-enabled
+  (mule-add-enter-rule item :checkbox org-toggle-checkbox)
+  (mule-add-enter-rule headline :todo-type mule-org-todo)
+  (mule-add-enter-rule link nil org-open-at-point markdown-follow-thing-at-point browse-url-at-point))
+
+(defun mule-enter-dwim ()
+  "Smart Return handler for MULE Normal State."
+  (interactive)
+  (cond
+   ((mule--org-agenda-enter-handler))
+   ((mule--org-mode-enter-handler))
+   ((mule--non-editing-enter-handler))))
+
+(add-hook 'mule-normal-mode-hook
+          (lambda ()
+            (unless (mule--editing-mode-p)
+              (setq mule--saved-ret-binding
+                    (lookup-key (current-local-map) (kbd "RET")))))
+          t)
+
+(defun mule--in-org-src-block-p ()
+  "Return non-nil if point is inside an Org source block."
+  (and (eq major-mode 'org-mode)
+       (fboundp 'org-element-at-point)
+       (let ((elem (org-element-at-point)))
+         (and (consp elem) (eq (car elem) 'src-block)))))
+
+(defun mule-comment-dwim ()
+  "Comment/uncomment whole lines in region, or current line if no
+region.
+
+When inside an Org source block, delegates to the block's native
+major mode via `org-edit-special' for language-aware commenting,
+then returns to the Org buffer."
+  (interactive)
+  (cond
+   ((mule--in-org-src-block-p)
+    (let ((has-region (use-region-p))
+          (cur-line (line-number-at-pos))
+          (reg-beg-line (when (use-region-p)
+                          (line-number-at-pos (region-beginning))))
+          (reg-end-line (when (use-region-p)
+                          (line-number-at-pos (region-end)))))
+      (condition-case err
+          (progn
+            (org-edit-special)
+            (if has-region
+                (let* ((cur-line-in-edit (line-number-at-pos))
+                       (diff (- cur-line-in-edit cur-line))
+                       (edit-beg-line (+ reg-beg-line diff))
+                       (edit-end-line (+ reg-end-line diff)))
+                  (save-excursion
+                    (goto-char (point-min))
+                    (forward-line (1- edit-beg-line))
+                    (let ((beg (line-beginning-position)))
+                      (forward-line (- edit-end-line edit-beg-line))
+                      (comment-or-uncomment-region
+                       beg (line-beginning-position 2)))))
+              (comment-or-uncomment-region
+               (line-beginning-position)
+               (line-beginning-position 2)))
+            (org-edit-src-exit)
+            (when has-region (deactivate-mark)))
+        (error
+         (message "mule-comment-dwim (org-src): %s"
+                  (error-message-string err))))))
+   (t
+    (if (use-region-p)
+        (let ((beg (save-excursion
+                     (goto-char (region-beginning))
+                     (line-beginning-position)))
+              (end (save-excursion
+                     (goto-char (region-end))
+                     (if (bolp) (point) (line-beginning-position 2)))))
+          (comment-or-uncomment-region beg end))
+      (comment-or-uncomment-region
+       (line-beginning-position)
+       (line-beginning-position 2)))
+    (deactivate-mark))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Clipboard Tools Detection
