@@ -341,7 +341,6 @@ recorded positions. Skips markers whose buffer has been killed."
 (defun mule-insert-here ()
   "Insert at current position - enters INSERT state."
   (interactive)
-  (interactive)
   (when (and mark-active (use-region-p))
     (deactivate-mark))
   (mule-enter-insert))
