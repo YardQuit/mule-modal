@@ -70,7 +70,7 @@ explicitly if desired."
   :group 'mule)
 
 (defun mule--handle-non-editing-buffer ()
-  "Enter insert mode in excluded major modes when mule-normal-mode activates."
+  "Enter insert mode in excluded major modes when `mule-normal-mode' activates."
   (when (member major-mode mule-excluded-modes)
     (when (bound-and-true-p mule-normal-mode)
       (mule-enter-insert))))
@@ -98,141 +98,142 @@ explicitly if desired."
              "# Start your scribble here and save to file with '"
              "\\[save-some-buffers]"
              "' for persistence.\n\n"))))
-     (goto-char (point-max)))
+  (goto-char (point-max)))
 
-   (defun mule-create-org-scratch ()
-     "Create an _org-scratch_ buffer."
-     (let ((buffer (get-buffer-create "*org-scratch*")))
-       (switch-to-buffer buffer)
-       (org-mode)
-       (mule-insert-org-scratch-message)))
+(defun mule-create-org-scratch ()
+  "Create an _org-scratch_ buffer."
+  (let ((buffer (get-buffer-create "*org-scratch*")))
+    (switch-to-buffer buffer)
+    (org-mode)
+    (mule-insert-org-scratch-message)))
 
-   (defun mule-org-scratch ()
-     "Create or switch to _org-scratch_."
-     (interactive)
-     (let ((org-scratch-buffer (get-buffer "*org-scratch*")))
-       (if org-scratch-buffer
-           (progn
-             (switch-to-buffer org-scratch-buffer)
-             (message "*org-scratch* buffer already exist, switching."))
-         (mule-create-org-scratch)
-         (message "*org-scratch* buffer doesn't exist, creating."))))
+(defun mule-org-scratch ()
+  "Create or switch to _org-scratch_."
+  (interactive)
+  (let ((org-scratch-buffer (get-buffer "*org-scratch*")))
+    (if org-scratch-buffer
+        (progn
+          (switch-to-buffer org-scratch-buffer)
+          (message "*org-scratch* buffer already exist, switching."))
+      (mule-create-org-scratch)
+      (message "*org-scratch* buffer doesn't exist, creating."))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mule Describe Bindings
 ;;; ---------------------------------------------------------------------------
 
 (defun mule--desc-bindings-collect-leaves (map prefix)
-  "Recursively walk MAP and return a list of (FULL-KEY . DEF) cons
-cells for leaf bindings."
-  (let (acc)
-    (map-keymap
-     (lambda (key def)
-       (when def
-         (let ((full-key (concat prefix (key-description (vector key)))))
-           (unless (and (eq key 'remap)
-                        (keymapp def)
-                        (lookup-key def [self-insert-command]))
-             (cond
-              ((keymapp def)
-               (setq acc (append acc
-                                 (mule--desc-bindings-collect-leaves
-                                  def (concat full-key " ")))))
-              ((and (consp def) (keymapp (cdr def)))
-               (setq acc (append acc
-                                 (mule--desc-bindings-collect-leaves
-                                  (cdr def) (concat full-key " ")))))
-              (t
-               (push (cons full-key def) acc)))))))
-     map)
-    (nreverse acc)))
+  "Recursively walk MAP and return a list of (FULL-KEY . DEF) cons cells.
 
-(defun mule--binding-group-name (prefix)
-  "Return a human-readable group name for PREFIX."
-  (cond
-   ((string= prefix "single") "Single Keys")
-   ((string= prefix "g")      "Goto / Scroll")
-   ((string= prefix "m")      "Mark Objects")
-   ((string= prefix "r")      "Search / Replace")
-   ((string= prefix "z")      "Scroll")
-   (t (format "%s Prefix" (upcase prefix)))))
+PREFIX is the accumulated key sequence string for the current path."
+    (let (acc)
+      (map-keymap
+       (lambda (key def)
+         (when def
+           (let ((full-key (concat prefix (key-description (vector key)))))
+             (unless (and (eq key 'remap)
+                          (keymapp def)
+                          (lookup-key def [self-insert-command]))
+               (cond
+                ((keymapp def)
+                 (setq acc (append acc
+                                   (mule--desc-bindings-collect-leaves
+                                    def (concat full-key " ")))))
+                ((and (consp def) (keymapp (cdr def)))
+                 (setq acc (append acc
+                                   (mule--desc-bindings-collect-leaves
+                                    (cdr def) (concat full-key " ")))))
+                (t
+                 (push (cons full-key def) acc)))))))
+       map)
+      (nreverse acc)))
 
-(defun mule-describe-bindings ()
-  "Display all leaf keybindings in mule-normal-mode-map with formatting.
+  (defun mule--binding-group-name (prefix)
+    "Return a human-readable group name for PREFIX."
+    (cond
+     ((string= prefix "single") "Single Keys")
+     ((string= prefix "g")      "Goto / Scroll")
+     ((string= prefix "m")      "Mark Objects")
+     ((string= prefix "r")      "Search / Replace")
+     ((string= prefix "z")      "Scroll")
+     (t (format "%s Prefix" (upcase prefix)))))
 
-Bindings are grouped by prefix, separated by blank rows and section
-headers. Command names are clickable buttons that open their
-documentation."
-  (interactive)
-  (unless (boundp 'mule-normal-mode-map)
-    (user-error "mule-normal-mode-map is not defined yet"))
-  (let* ((buf (get-buffer-create "*MULE Bindings*"))
-         (raw (mule--desc-bindings-collect-leaves mule-normal-mode-map ""))
-         (sorted-raw (sort raw (lambda (a b) (string< (car a) (car b))))))
-    (with-current-buffer buf
-      (setq buffer-read-only nil)
-      (erase-buffer)
-      ;; Title
-      (insert (propertize "MULE Normal Mode Key Bindings\n"
-                          'face '(bold font-lock-function-name-face :height 1.2)))
-      (insert (propertize (make-string 50 ?=)
-                          'face 'font-lock-comment-face) "\n\n")
-      ;; Column header
-      (insert (propertize (format "%-14s %s\n" "KEY" "COMMAND")
-                          'face 'font-lock-keyword-face))
-      (insert (propertize (make-string 50 ?-)
-                          'face 'font-lock-comment-face) "\n")
-      ;; Binding entries
-      (let ((prev-group nil)
-            (lines-added 0))
-        (dolist (entry sorted-raw)
-          (let* ((full-key (car entry))
-                 (def      (cdr entry))
-                 (group    (if (string-match "\\(.+?\\) " full-key)
-                               (match-string 1 full-key)
-                             "single"))
-                 (new-block-p (and (> lines-added 0)
-                                   (not (equal prev-group group)))))
-            ;; Separator + header on group transition
-            (when new-block-p
+  (defun mule-describe-bindings ()
+    "Display all leaf keybindings in `mule-normal-mode-map' with formatting.
+
+  Bindings are grouped by prefix, separated by blank rows and section
+  headers. Command names are clickable buttons that open their
+  documentation."
+    (interactive)
+    (unless (boundp 'mule-normal-mode-map)
+      (user-error "mule-normal-mode-map is not defined yet"))
+    (let* ((buf (get-buffer-create "*MULE Bindings*"))
+           (raw (mule--desc-bindings-collect-leaves mule-normal-mode-map ""))
+           (sorted-raw (sort raw (lambda (a b) (string< (car a) (car b))))))
+      (with-current-buffer buf
+        (setq buffer-read-only nil)
+        (erase-buffer)
+        ;; Title
+        (insert (propertize "MULE Normal Mode Key Bindings\n"
+                            'face '(bold font-lock-function-name-face :height 1.2)))
+        (insert (propertize (make-string 50 ?=)
+                            'face 'font-lock-comment-face) "\n\n")
+        ;; Column header
+        (insert (propertize (format "%-14s %s\n" "KEY" "COMMAND")
+                            'face 'font-lock-keyword-face))
+        (insert (propertize (make-string 50 ?-)
+                            'face 'font-lock-comment-face) "\n")
+        ;; Binding entries
+        (let ((prev-group nil)
+              (lines-added 0))
+          (dolist (entry sorted-raw)
+            (let* ((full-key (car entry))
+                   (def      (cdr entry))
+                   (group    (if (string-match "\\(.+?\\) " full-key)
+                                 (match-string 1 full-key)
+                               "single"))
+                   (new-block-p (and (> lines-added 0)
+                                     (not (equal prev-group group)))))
+              ;; Separator + header on group transition
+              (when new-block-p
+                (insert "\n")
+                (insert (propertize (format "  %s" (mule--binding-group-name group))
+                                    'face '(bold font-lock-comment-delimiter-face)))
+                (insert "\n")
+                (insert (propertize (make-string 50 ?-)
+                                    'face 'font-lock-comment-face) "\n"))
+              ;; Key column
+              (insert (propertize (format "%-14s " full-key)
+                                  'face 'font-lock-variable-name-face))
+              ;; Command name as clickable button
+              (if (symbolp def)
+                  (insert-text-button (symbol-name def)
+                                      'action (lambda (_) (describe-function def))
+                                      'follow-link t
+                                      'help-echo (format "Describe %s" def))
+                (insert "[complex]"))
               (insert "\n")
-              (insert (propertize (format "  %s" (mule--binding-group-name group))
-                                  'face '(bold font-lock-comment-delimiter-face)))
-              (insert "\n")
-              (insert (propertize (make-string 50 ?-)
-                                  'face 'font-lock-comment-face) "\n"))
-            ;; Key column
-            (insert (propertize (format "%-14s " full-key)
-                                'face 'font-lock-variable-name-face))
-            ;; Command name as clickable button
-            (if (symbolp def)
-                (insert-text-button (symbol-name def)
-                                    'action (lambda (_) (describe-function def))
-                                    'follow-link t
-                                    'help-echo (format "Describe %s" def))
-              (insert "[complex]"))
-            (insert "\n")
-            (setq lines-added (1+ lines-added)
-                  prev-group  group))))
-      ;; Footer
-      (insert "\n")
-      (insert (propertize (make-string 50 ?=)
-                          'face 'font-lock-comment-face) "\n")
-      (insert (propertize "q: quit  |  RET or click: describe command"
-                          'face 'font-lock-comment-face))
-      ;; Buffer settings
-      (special-mode)
-      (setq-local buffer-read-only t)
-      (setq-local truncate-lines t)
-      ;; Local keymap — avoids polluting shared special-mode-map
-      (let ((local-map (make-sparse-keymap)))
-        (set-keymap-parent local-map special-mode-map)
-        (keymap-set local-map "q"   #'quit-window)
-        (keymap-set local-map "RET" #'push-button)
-        (use-local-map local-map))
+              (setq lines-added (1+ lines-added)
+                    prev-group  group))))
+        ;; Footer
+        (insert "\n")
+        (insert (propertize (make-string 50 ?=)
+                            'face 'font-lock-comment-face) "\n")
+        (insert (propertize "q: quit  |  RET or click: describe command"
+                            'face 'font-lock-comment-face))
+        ;; Buffer settings
+        (special-mode)
+        (setq-local buffer-read-only t)
+        (setq-local truncate-lines t)
+        ;; Local keymap — avoids polluting shared special-mode-map
+        (let ((local-map (make-sparse-keymap)))
+          (set-keymap-parent local-map special-mode-map)
+          (keymap-set local-map "q"   #'quit-window)
+          (keymap-set local-map "RET" #'push-button)
+          (use-local-map local-map))
 
-      (goto-char (point-min)))
-    (display-buffer buf)))
+        (goto-char (point-min)))
+      (display-buffer buf)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Line and Buffer Navigation Commands
@@ -244,8 +245,7 @@ documentation."
   :group 'mule)
 
 (defvar mule--position-ring nil
-  "List of markers recording previous cursor positions, most recent
-first.")
+  "List of markers recording previous cursor positions, most recent first.")
 
 (defvar mule--position-index 0
   "Current rotation offset into `mule--position-ring'.
@@ -257,7 +257,7 @@ recorded.")
   "Cons cell (BUFFER . POINT) captured after the previous command.")
 
 (defun mule--track-position ()
-  "Record previous cursor position when point or buffer changes.
+  "Record previous cursor position when point or buffer change.
 
 Runs on `post-command-hook'. Independent of the mark ring and
 region."
@@ -402,6 +402,7 @@ recorded positions. Skips markers whose buffer has been killed."
 
 (defun mule-org-todo ()
   "Toggle headline TODO state between TODO and DONE.
+
 Uses `org-element-at-point' to detect :todo-type property and
 dispatches `org-todo' accordingly. No keyword string parsing needed."
   (interactive)
@@ -443,18 +444,27 @@ dispatches `org-todo' accordingly. No keyword string parsing needed."
   (add-to-list 'mule--enter-rules rule t))
 
 (defmacro mule-add-enter-rule (element-type property &rest commands)
-  "Add an ENTER rule with property check and command fallback chain."
+  "Add an ENTER rule with element type, property, and command fallback.
+
+ELEMENT-TYPE specifies the org element type
+\(e.g. `:todo-type', `:checkbox', or nil).
+PROPERTY is the attribute to check on the element.
+COMMANDS is a list of functions tried sequentially until one succeeds.
+
+See `mule-enter-dwim' for how these rules are evaluated."
   (declare (indent 2))
   `(mule--register-enter-rule '(,element-type ,property ,@commands)))
 
 (defcustom mule-default-enter-rules-enabled t
   "If non-nil, install default ENTER rules on load.
+  
   Set to nil in `config.el' if you want to define rules manually."
   :type 'boolean
   :group 'mule)
 
 (defun mule--find-enter-handler ()
   "Find command for Enter key based on element at point.
+
 Checks context first, then parent, then ancestors — always trying all rules
 against more specific elements before broader ancestors.
 Returns command symbol or nil if no handler matches."
@@ -505,7 +515,7 @@ Returns command symbol or nil if no handler matches."
     (call-interactively cmd)))
 
 (defun mule--org-agenda-enter-handler ()
-  "Handle Enter in org-agenda mode. Returns t if handled, nil otherwise."
+  "Handle Enter in `org-agenda' mode. Return t if handled, otherwise nil."
   (when (and (fboundp 'org-agenda-mode-p)
              (boundp 'org-agenda-mode-map)
              (org-agenda-mode-p))
@@ -517,7 +527,7 @@ Returns command symbol or nil if no handler matches."
         t))))
 
 (defun mule--org-mode-enter-handler ()
-  "Handle Enter in org-mode and markdown modes. Returns t if handled."
+  "Handle Enter in `org-mode' and markdown modes. Return t if handled."
   (when (or (eq major-mode 'org-mode)
             (eq major-mode 'markdown-mode)
             (eq major-mode 'gfm-mode))
@@ -527,7 +537,7 @@ Returns command symbol or nil if no handler matches."
         t))))
 
 (defun mule--non-editing-enter-handler ()
-  "Handle Enter in non-editing modes. Returns t if handled."
+  "Handle Enter in non-editing modes. Return t if handled."
   (unless (mule--editing-mode-p)
     (when (and mule--saved-ret-binding
                (not (eq mule--saved-ret-binding 'undefined))
@@ -564,8 +574,7 @@ Returns command symbol or nil if no handler matches."
          (and (consp elem) (eq (car elem) 'src-block)))))
 
 (defun mule-comment-dwim ()
-  "Comment/uncomment whole lines in region, or current line if no
-region.
+  "Comment/uncomment whole lines in region, or current line if no region.
 
 When inside an Org source block, delegates to the block's native
 major mode via `org-edit-special' for language-aware commenting,
@@ -623,10 +632,10 @@ then returns to the Org buffer."
 (defvar mule--clipboard-tools-available nil
   "Non-nil when system clipboard integration is available.
 
-Checked synchronously at load time. Non-nil when the platform
+Checked synchronously at load time.  Non-nil when the platform
 supports native clipboard access or when at least one of
-`wl-copy' (Wayland), `xclip'/`xsel' (X11), or `pbcopy' (macOS)
-is found in `exec-path'.")
+`wl-copy' (Wayland), `xclip'/'xsel' (X11), or `pbcopy' (macOS)
+is found in the variable `exec-path'.")
 
 ;; Track whether we've shown the clipboard warning this session
 (defvar mule--clipboard-warning-shown nil
@@ -658,8 +667,8 @@ is assumed. Returns non-nil if any tool or native support is found."
 
 (unless (or mule--clipboard-tools-available noninteractive)
   (message "Warning (mule-modal): No system clipboard tools detected.
-  Yank will fall back to the kill-ring. Install wl-clipboard
-  (Wayland), xclip or xsel (X11) for system clipboard integration."))
+    Yank will fall back to the kill-ring. Install wl-clipboard
+    (Wayland), xclip or xsel (X11) for system clipboard integration."))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Clipboard Platform Diagnostics and Debugging
@@ -765,11 +774,11 @@ Output goes to a temporary buffer named '*MULE Platform Debug*'."
 ;;; ---------------------------------------------------------------------------
 
 (defun mule--clipboard-yank ()
-  "Yank from the system clipboard with kill-ring fallback.
+  "Yank from the system clipboard with `kill-ring' fallback.
 
 Invokes `clipboard-yank' when the function is available; otherwise
 falls back to `yank'. If `clipboard-yank' signals an error
-(empty or inaccessible clipboard), falls back to `yank' from the
+\(empty or inaccessible clipboard), falls back to `yank' from the
 kill ring and emits an informative message with platform context.
 Shows platform-appropriate installation tips only once per session."
   (let ((platform-context
@@ -798,8 +807,8 @@ Shows platform-appropriate installation tips only once per session."
 (defun mule--delete-active-region-safe ()
   "Delete active region if one exists.
 
-Uses `kill-active-region' if available (Emacs 29+), falling back to
-`delete-active-region'. Handles both cases gracefully."
+Uses the function `kill-active-region' if available (Emacs 29+), falling back to
+the function `delete-active-region'.  Handles both cases gracefully."
   (when (use-region-p)
     (if (fboundp 'kill-active-region)
         (kill-active-region)
@@ -816,7 +825,7 @@ terminal Emacs on Linux (X11/Wayland), macOS, and Windows."
   (mule--clipboard-yank))
 
 (defun mule-yank-pop ()
-  "Replace the last yanked text with the next kill-ring entry.
+  "Replace the last yanked text with the next `kill-ring' entry.
 
 Removes the active region first if one is present."
   (interactive)
@@ -855,7 +864,7 @@ Removes the active region first if one is present."
     (message "Visual line: j/k to extend, V to cancel")))
 
 (defun mule-visual-next-line ()
-  "Move down. Extends visual selection if active."
+  "Move down. Extend visual selection if active."
   (interactive)
   (if (and (region-active-p) mule-visual-anchor)
       (progn
@@ -873,7 +882,7 @@ Removes the active region first if one is present."
     (forward-line 1)))
 
 (defun mule-visual-previous-line ()
-  "Move up. Extends visual selection if active."
+  "Move up. Extend visual selection if active."
   (interactive)
   (if (and (region-active-p) mule-visual-anchor)
       (progn
@@ -1202,14 +1211,12 @@ Trailing commas or periods are omitted from the selection."
 (defvar mule-insert-mode-map nil
   "Keymap for MULE Insert state.
 
-Minimal keymap: all keys fall through to the major mode and global
-map, providing unmodified Emacs behavior. C-g is bound to
-`mule--exit-insert' to return to Normal state.")
+Minimal keymap: all keys fall through to the major mode and global map,
+providing unmodified Emacs behavior.  The `C-g' key runs the command
+`\mule--exit-insert' to return to Normal state.")
+
 (when (null mule-insert-mode-map)
   (setq mule-insert-mode-map (make-sparse-keymap)))
-;; C-g is bound later in the Insert to Normal Transition section.
-;; All other keys pass through to the active major mode and global
-;; keymap, replicating standard Emacs input behavior.
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mule Mode Definitions
@@ -1231,8 +1238,8 @@ versa."
 (define-minor-mode mule-insert-mode
   "MULE Insert state - passthrough to standard Emacs input.
 
-All keys fall through to the major mode and global keymap. Press C-g
-to return to Normal state."
+All keys fall through to the major mode and global keymap.
+\\[mule--exit-insert] returns to Normal state."
   :group 'mule
   :lighter " MULE[I]"
   :keymap mule-insert-mode-map
@@ -1431,8 +1438,7 @@ need to read it after switching buffers.")
   (mule-normal-mode 1))
 
 (defvar-local mule--deferred-overlay-cleanup-timer nil
-  "Buffer-local timer for deferred overlay cleanup after exiting
-insert mode.")
+  "Buffer-local timer for deferred overlay cleanup after exiting insert mode.")
 
 (defvar-local mule--just-exited-from-insert nil
   "Buffer-local guard set when exiting insert mode.
@@ -1500,8 +1506,7 @@ Operates on the current buffer only."
     cleared))
 
 (defun mule--schedule-overlay-cleanup ()
-  "Schedule deferred cleanup for overlays created by post-command
-hooks."
+  "Schedule deferred cleanup for overlays created by post-command hooks."
   (when mule--deferred-overlay-cleanup-timer
     (cancel-timer mule--deferred-overlay-cleanup-timer))
   (let ((buf (current-buffer)))
@@ -1515,8 +1520,7 @@ hooks."
                  (setq mule--deferred-overlay-cleanup-timer nil))))))))
 
 (defun mule--reset-exit-guard ()
-  "Reset the exit guard on next command. Allows re-entry of insert
-mode."
+  "Reset the exit guard on next command. Allow re-entry of insert mode."
   (setq mule--just-exited-from-insert nil)
   (remove-hook 'pre-command-hook #'mule--reset-exit-guard))
 
@@ -1535,9 +1539,10 @@ overlay cleanup. In the minibuffer, delegates to `keyboard-quit'."
     (mule--schedule-overlay-cleanup)))
 
 (defun mule--intercept-quit-in-insert ()
-  "Intercept C-g in insert mode by raw key event or sp-cancel command.
+  "Intercept the quit key in insert mode by raw key event or `sp-cancel' command.
 
-Calls `mule--exit-insert' directly to ensure state transition occurs."
+Detects a raw quit keypress (or `sp-cancel') while in `mule-insert-mode',
+then calls `mule--exit-insert' directly to ensure state transition occurs."
   (when (and (bound-and-true-p mule-insert-mode)
              (not mule--just-exited-from-insert)
              (not (minibufferp))
@@ -1550,10 +1555,10 @@ Calls `mule--exit-insert' directly to ensure state transition occurs."
     (mule--exit-insert)))
 
 (defun mule--setup-smartparens-integration ()
-  "Configure C-g handler in all smartparens keymaps.
+  "Configure the quit-key handler in all smartparens keymaps.
 
-Binds C-g in smartparens-mode-map AND overlay keymaps
-(sp-pair-overlay-keymap, sp-overlay-keymap). Overlay keymaps have
+Binds the quit key in `smartparens-mode-map' and overlay keymaps
+\(`sp-pair-overlay-keymap', `sp-overlay-keymap').  Overlay keymaps have
 higher priority than minor-mode maps."
   (when (and (boundp 'smartparens-mode-map)
              (keymapp smartparens-mode-map))
@@ -1582,8 +1587,7 @@ higher priority than minor-mode maps."
 ;;; ---------------------------------------------------------------------------
 
 (defvar-local mule--saved-input-method nil
-  "Buffer-local saved input method name for restoration on Insert
-entry.")
+  "Buffer-local saved input method name for restoration on Insert entry.")
 
 (defun mule--on-normal-entry ()
   "Deactivate input method when entering Normal state."
@@ -1616,8 +1620,7 @@ entry.")
 ;;; ---------------------------------------------------------------------------
 
 (defun mule--ensure-default-state ()
-  "Enable MULE Normal state unless the current major mode is
-excluded.
+  "Enable MULE Normal state unless the current major mode is excluded.
 
 For excluded modes, enable MULE Insert state (passthrough) instead.
 Returns non-nil if MULE was enabled."
