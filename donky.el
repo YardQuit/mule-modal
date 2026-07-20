@@ -1,14 +1,14 @@
-;;; mule-modal.el --- Opinionated Modal Editing -*- lexical-binding: t -*-
+;;; donky.el --- Opinionated Modal Editing -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2026 Michael Jones
 ;; Author: Michael Jones <yardquit@pm.me>
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo 2.0 Max
-;; URL: https://github.com/yardquit/mule-modal
+;; URL: https://github.com/yardquit/donky
 ;; Version: 1.0.0
-;; Package-Requires: ((emacs "28.1"))
+;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: convenience
-;; Homepage: https://github.com/yardquit/mule-modal
+;; Homepage: https://github.com/yardquit/donky
 
 ;; This file is not part of GNU Emacs.
 ;; This program is free software; you can redistribute it and/or modify
@@ -27,69 +27,75 @@
 ;;; Commentary:
 ;; Philosophy: Leverage Emacs Native Commands and built-in functions
 ;; wherever possible. Custom commands only where beneficial.
+;;
+;; Optional Smartparens Integration:
+;; If you use smartparens, call `(donky-setup-smartparens)' in
+;; your config after loading smartparens to bind C-g in smartparens
+;; overlay keymaps. This improves reliability of C-g escape in terminal
+;; mode when inside nested smartparens overlays.
 
 ;;; Usage:
-;; - Press C-g to enter MULE-NORMAL state.
+;; - Press C-g to enter DONKY-NORMAL state.
 ;; - In NORMAL: h,j,k,l navigate; i,I,a,A,o,O,c enter INSERT state.
 ;; - In INSERT: Standard Emacs behavior, press C-g to return to NORMAL.
-;; - State indicators show in modeline: MULE[N] = Normal, MULE[I] = Insert.
+;; - State indicators show in modeline: DONKY[N] = Normal, DONKY[I] = Insert.
 
 ;;; Code:
 
-(require 'thingatpt) ;(mule-mark-word)
+(require 'thingatpt) ;(donky-mark-word)
 (require 'cl-lib)    ; Explicitly load cl-lib for cl-some, cl-incf
 (eval-and-compile
-  (declare-function org-open-at-point "org")     ;(mule-enter-dwim)
-  (declare-function org-element-at-point "org")  ;(mule-enter-dwim)
-  (declare-function org-edit-src-exit "org")     ;(mule-comment-dwim)
-  (declare-function org-edit-special "org")      ;(mule-comment-dwim)
-  (defvar mule-normal-mode-map nil)
-  (defvar mule-insert-mode-map nil))
+  (declare-function org-open-at-point "org")     ;(donky-enter-dwim)
+  (declare-function org-element-at-point "org")  ;(donky-enter-dwim)
+  (declare-function org-edit-src-exit "org")     ;(donky-comment-dwim)
+  (declare-function org-edit-special "org")      ;(donky-comment-dwim)
+  (defvar donky-normal-mode-map nil)
+  (defvar donky-insert-mode-map nil))
 
-(defvar this-single-command-keys)              ;(mule--intercept-quit-in-insert)
-(defvar this-command)                          ;(mule--intercept-quit-in-insert)
+(defvar this-single-command-keys)              ;(donky--intercept-quit-in-insert)
+(defvar this-command)                          ;(donky--intercept-quit-in-insert)
 
 ;;; ---------------------------------------------------------------------------
-;;; Mule Excluded-modes
+;;; Donky Excluded-modes
 ;;; ---------------------------------------------------------------------------
 
-(defcustom mule-excluded-modes
+(defcustom donky-excluded-modes
   '(comint-mode term-mode vterm-mode eshell-mode)
-  "Major modes where MULE Normal state should be permanently disabled.
+  "Major modes where DONKY Normal state should be permanently disabled.
 
 These modes manage subprocess interaction or terminal emulation
 where suppressing keys via `suppress-keymap' would break
 functionality. Derived modes (e.g. `shell-mode' from
 `comint-mode') are caught by `derived-mode-p' in
-`mule--ensure-default-state'.
+`donky--ensure-default-state'.
 
 For modes like `dired-mode' or `magit-status-mode' where normal
 mode is a preference rather than a necessity, add them here
 explicitly if desired."
   :type '(repeat symbol)
-  :group 'mule)
+  :group 'donky)
 
-(defun mule--handle-non-editing-buffer ()
-  "Enter insert mode in excluded major modes when `mule-normal-mode' activates."
-  (when (member major-mode mule-excluded-modes)
-    (when (bound-and-true-p mule-normal-mode)
-      (mule-enter-insert))))
+(defun donky--handle-non-editing-buffer ()
+  "Enter insert mode in excluded major modes when `donky-normal-mode' activates."
+  (when (member major-mode donky-excluded-modes)
+    (when (bound-and-true-p donky-normal-mode)
+      (donky-enter-insert))))
 
-(add-hook 'mule-normal-mode-hook #'mule--handle-non-editing-buffer)
+(add-hook 'donky-normal-mode-hook #'donky--handle-non-editing-buffer)
 
-(defun mule--check-post-command-non-editing ()
+(defun donky--check-post-command-non-editing ()
   "Check after commands if we're in an excluded mode."
-  (when (and (bound-and-true-p mule-normal-mode)
-             (member major-mode mule-excluded-modes))
-    (mule-enter-insert)))
+  (when (and (bound-and-true-p donky-normal-mode)
+             (member major-mode donky-excluded-modes))
+    (donky-enter-insert)))
 
-(add-hook 'post-command-hook #'mule--check-post-command-non-editing)
+(add-hook 'post-command-hook #'donky--check-post-command-non-editing)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Org-Scratch Buffer Creation
 ;;; ---------------------------------------------------------------------------
 
-(defun mule-insert-org-scratch-message ()
+(defun donky-insert-org-scratch-message ()
   "Insert buffer message."
   (insert
    (substitute-command-keys
@@ -100,14 +106,14 @@ explicitly if desired."
              "' for persistence.\n\n"))))
   (goto-char (point-max)))
 
-(defun mule-create-org-scratch ()
+(defun donky-create-org-scratch ()
   "Create an _org-scratch_ buffer."
   (let ((buffer (get-buffer-create "*org-scratch*")))
     (switch-to-buffer buffer)
     (org-mode)
-    (mule-insert-org-scratch-message)))
+    (donky-insert-org-scratch-message)))
 
-(defun mule-org-scratch ()
+(defun donky-org-scratch ()
   "Create or switch to _org-scratch_."
   (interactive)
   (let ((org-scratch-buffer (get-buffer "*org-scratch*")))
@@ -115,148 +121,148 @@ explicitly if desired."
         (progn
           (switch-to-buffer org-scratch-buffer)
           (message "*org-scratch* buffer already exist, switching."))
-      (mule-create-org-scratch)
+      (donky-create-org-scratch)
       (message "*org-scratch* buffer doesn't exist, creating."))))
 
 ;;; ---------------------------------------------------------------------------
-;;; Mule Describe Bindings
+;;; Donky Describe Bindings
 ;;; ---------------------------------------------------------------------------
 
-(defun mule--desc-bindings-collect-leaves (map prefix)
+(defun donky--desc-bindings-collect-leaves (map prefix)
   "Recursively walk MAP and return a list of (FULL-KEY . DEF) cons cells.
 
 PREFIX is the accumulated key sequence string for the current path."
-    (let (acc)
-      (map-keymap
-       (lambda (key def)
-         (when def
-           (let ((full-key (concat prefix (key-description (vector key)))))
-             (unless (and (eq key 'remap)
-                          (keymapp def)
-                          (lookup-key def [self-insert-command]))
-               (cond
-                ((keymapp def)
-                 (setq acc (append acc
-                                   (mule--desc-bindings-collect-leaves
-                                    def (concat full-key " ")))))
-                ((and (consp def) (keymapp (cdr def)))
-                 (setq acc (append acc
-                                   (mule--desc-bindings-collect-leaves
-                                    (cdr def) (concat full-key " ")))))
-                (t
-                 (push (cons full-key def) acc)))))))
-       map)
-      (nreverse acc)))
+  (let (acc)
+    (map-keymap
+     (lambda (key def)
+       (when def
+         (let ((full-key (concat prefix (key-description (vector key)))))
+           (unless (and (eq key 'remap)
+                        (keymapp def)
+                        (lookup-key def [self-insert-command]))
+             (cond
+              ((keymapp def)
+               (setq acc (append acc
+                                 (donky--desc-bindings-collect-leaves
+                                  def (concat full-key " ")))))
+              ((and (consp def) (keymapp (cdr def)))
+               (setq acc (append acc
+                                 (donky--desc-bindings-collect-leaves
+                                  (cdr def) (concat full-key " ")))))
+              (t
+               (push (cons full-key def) acc)))))))
+     map)
+    (nreverse acc)))
 
-  (defun mule--binding-group-name (prefix)
-    "Return a human-readable group name for PREFIX."
-    (cond
-     ((string= prefix "single") "Single Keys")
-     ((string= prefix "g")      "Goto / Scroll")
-     ((string= prefix "m")      "Mark Objects")
-     ((string= prefix "r")      "Search / Replace")
-     ((string= prefix "z")      "Scroll")
-     (t (format "%s Prefix" (upcase prefix)))))
+(defun donky--binding-group-name (prefix)
+  "Return a human-readable group name for PREFIX."
+  (cond
+   ((string= prefix "single") "Single Keys")
+   ((string= prefix "g")      "Goto / Scroll")
+   ((string= prefix "m")      "Mark Objects")
+   ((string= prefix "r")      "Search / Replace")
+   ((string= prefix "z")      "Scroll")
+   (t (format "%s Prefix" (upcase prefix)))))
 
-  (defun mule-describe-bindings ()
-    "Display all leaf keybindings in `mule-normal-mode-map' with formatting.
+(defun donky-describe-bindings ()
+  "Display all leaf keybindings in `donky-normal-mode-map' with formatting.
 
-  Bindings are grouped by prefix, separated by blank rows and section
-  headers. Command names are clickable buttons that open their
-  documentation."
-    (interactive)
-    (unless (boundp 'mule-normal-mode-map)
-      (user-error "mule-normal-mode-map is not defined yet"))
-    (let* ((buf (get-buffer-create "*MULE Bindings*"))
-           (raw (mule--desc-bindings-collect-leaves mule-normal-mode-map ""))
-           (sorted-raw (sort raw (lambda (a b) (string< (car a) (car b))))))
-      (with-current-buffer buf
-        (setq buffer-read-only nil)
-        (erase-buffer)
-        ;; Title
-        (insert (propertize "MULE Normal Mode Key Bindings\n"
-                            'face '(bold font-lock-function-name-face :height 1.2)))
-        (insert (propertize (make-string 50 ?=)
-                            'face 'font-lock-comment-face) "\n\n")
-        ;; Column header
-        (insert (propertize (format "%-14s %s\n" "KEY" "COMMAND")
-                            'face 'font-lock-keyword-face))
-        (insert (propertize (make-string 50 ?-)
-                            'face 'font-lock-comment-face) "\n")
-        ;; Binding entries
-        (let ((prev-group nil)
-              (lines-added 0))
-          (dolist (entry sorted-raw)
-            (let* ((full-key (car entry))
-                   (def      (cdr entry))
-                   (group    (if (string-match "\\(.+?\\) " full-key)
-                                 (match-string 1 full-key)
-                               "single"))
-                   (new-block-p (and (> lines-added 0)
-                                     (not (equal prev-group group)))))
-              ;; Separator + header on group transition
-              (when new-block-p
-                (insert "\n")
-                (insert (propertize (format "  %s" (mule--binding-group-name group))
-                                    'face '(bold font-lock-comment-delimiter-face)))
-                (insert "\n")
-                (insert (propertize (make-string 50 ?-)
-                                    'face 'font-lock-comment-face) "\n"))
-              ;; Key column
-              (insert (propertize (format "%-14s " full-key)
-                                  'face 'font-lock-variable-name-face))
-              ;; Command name as clickable button
-              (if (symbolp def)
-                  (insert-text-button (symbol-name def)
-                                      'action (lambda (_) (describe-function def))
-                                      'follow-link t
-                                      'help-echo (format "Describe %s" def))
-                (insert "[complex]"))
+Bindings are grouped by prefix, separated by blank rows and section
+headers. Command names are clickable buttons that open their
+documentation."
+  (interactive)
+  (unless (boundp 'donky-normal-mode-map)
+    (user-error "donky-normal-mode-map is not defined yet"))
+  (let* ((buf (get-buffer-create "*DONKY Bindings*"))
+         (raw (donky--desc-bindings-collect-leaves donky-normal-mode-map ""))
+         (sorted-raw (sort raw (lambda (a b) (string< (car a) (car b))))))
+    (with-current-buffer buf
+      (setq buffer-read-only nil)
+      (erase-buffer)
+      ;; Title
+      (insert (propertize "DONKY Normal Mode Key Bindings\n"
+                          'face '(bold font-lock-function-name-face :height 1.2)))
+      (insert (propertize (make-string 50 ?=)
+                          'face 'font-lock-comment-face) "\n\n")
+      ;; Column header
+      (insert (propertize (format "%-14s %s\n" "KEY" "COMMAND")
+                          'face 'font-lock-keyword-face))
+      (insert (propertize (make-string 50 ?-)
+                          'face 'font-lock-comment-face) "\n")
+      ;; Binding entries
+      (let ((prev-group nil)
+            (lines-added 0))
+        (dolist (entry sorted-raw)
+          (let* ((full-key (car entry))
+                 (def      (cdr entry))
+                 (group    (if (string-match "\\(.+?\\) " full-key)
+                               (match-string 1 full-key)
+                             "single"))
+                 (new-block-p (and (> lines-added 0)
+                                   (not (equal prev-group group)))))
+            ;; Separator + header on group transition
+            (when new-block-p
               (insert "\n")
-              (setq lines-added (1+ lines-added)
-                    prev-group  group))))
-        ;; Footer
-        (insert "\n")
-        (insert (propertize (make-string 50 ?=)
-                            'face 'font-lock-comment-face) "\n")
-        (insert (propertize "q: quit  |  RET or click: describe command"
-                            'face 'font-lock-comment-face))
-        ;; Buffer settings
-        (special-mode)
-        (setq-local buffer-read-only t)
-        (setq-local truncate-lines t)
-        ;; Local keymap — avoids polluting shared special-mode-map
-        (let ((local-map (make-sparse-keymap)))
-          (set-keymap-parent local-map special-mode-map)
-          (keymap-set local-map "q"   #'quit-window)
-          (keymap-set local-map "RET" #'push-button)
-          (use-local-map local-map))
+              (insert (propertize (format "  %s" (donky--binding-group-name group))
+                                  'face '(bold font-lock-comment-delimiter-face)))
+              (insert "\n")
+              (insert (propertize (make-string 50 ?-)
+                                  'face 'font-lock-comment-face) "\n"))
+            ;; Key column
+            (insert (propertize (format "%-14s " full-key)
+                                'face 'font-lock-variable-name-face))
+            ;; Command name as clickable button
+            (if (symbolp def)
+                (insert-text-button (symbol-name def)
+                                    'action (lambda (_) (describe-function def))
+                                    'follow-link t
+                                    'help-echo (format "Describe %s" def))
+              (insert "[complex]"))
+            (insert "\n")
+            (setq lines-added (1+ lines-added)
+                  prev-group  group))))
+      ;; Footer
+      (insert "\n")
+      (insert (propertize (make-string 50 ?=)
+                          'face 'font-lock-comment-face) "\n")
+      (insert (propertize "q: quit  |  RET or click: describe command"
+                          'face 'font-lock-comment-face))
+      ;; Buffer settings
+      (special-mode)
+      (setq-local buffer-read-only t)
+      (setq-local truncate-lines t)
+      ;; Local keymap — avoids polluting shared special-mode-map
+      (let ((local-map (make-sparse-keymap)))
+        (set-keymap-parent local-map special-mode-map)
+        (keymap-set local-map "q"   #'quit-window)
+        (keymap-set local-map "RET" #'push-button)
+        (use-local-map local-map))
 
-        (goto-char (point-min)))
-      (display-buffer buf)))
+      (goto-char (point-min)))
+    (display-buffer buf)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Line and Buffer Navigation Commands
 ;;; ---------------------------------------------------------------------------
 
-(defcustom mule-position-ring-max 10
+(defcustom donky-position-ring-max 10
   "Number of position markers retained in the ring."
   :type 'integer
-  :group 'mule)
+  :group 'donky)
 
-(defvar mule--position-ring nil
+(defvar donky--position-ring nil
   "List of markers recording previous cursor positions, most recent first.")
 
-(defvar mule--position-index 0
-  "Current rotation offset into `mule--position-ring'.
+(defvar donky--position-index 0
+  "Current rotation offset into `donky--position-ring'.
 
 0 = most recent entry. Reset to 0 whenever a new position is
 recorded.")
 
-(defvar mule--last-tracked-state nil
+(defvar donky--last-tracked-state nil
   "Cons cell (BUFFER . POINT) captured after the previous command.")
 
-(defun mule--track-position ()
+(defun donky--track-position ()
   "Record previous cursor position when point or buffer change.
 
 Runs on `post-command-hook'. Independent of the mark ring and
@@ -264,36 +270,36 @@ region."
   (unless (minibufferp)
     (let ((now-buf (current-buffer))
           (now-pt  (point)))
-      (when (and mule--last-tracked-state
-                 (or (not (eq (car mule--last-tracked-state) now-buf))
-                     (/= (cdr mule--last-tracked-state) now-pt)))
+      (when (and donky--last-tracked-state
+                 (or (not (eq (car donky--last-tracked-state) now-buf))
+                     (/= (cdr donky--last-tracked-state) now-pt)))
         (let ((m (make-marker)))
-          (set-marker m (cdr mule--last-tracked-state)
-                      (car mule--last-tracked-state))
-          (push m mule--position-ring)
-          (when (> (length mule--position-ring) mule-position-ring-max)
-            (set-marker (car (last mule--position-ring)) nil)
-            (nbutlast mule--position-ring)))
-        (setq mule--position-index 0))
-      (setq mule--last-tracked-state (cons now-buf now-pt)))))
+          (set-marker m (cdr donky--last-tracked-state)
+                      (car donky--last-tracked-state))
+          (push m donky--position-ring)
+          (when (> (length donky--position-ring) donky-position-ring-max)
+            (set-marker (car (last donky--position-ring)) nil)
+            (nbutlast donky--position-ring)))
+        (setq donky--position-index 0))
+      (setq donky--last-tracked-state (cons now-buf now-pt)))))
 
-(defun mule-jump-back ()
+(defun donky-jump-back ()
   "Rotate to the next stored position in the ring and jump there.
 
-Press repeatedly to cycle through the last `mule--position-ring-max'
+Press repeatedly to cycle through the last `donky--position-ring-max'
 recorded positions. Skips markers whose buffer has been killed."
   (interactive)
-  (if (null mule--position-ring)
+  (if (null donky--position-ring)
       (user-error "No positions recorded yet")
-    (let ((ring-len (length mule--position-ring))
+    (let ((ring-len (length donky--position-ring))
           target skipped)
       (cl-loop repeat ring-len
                until target
                do
-               (setq mule--position-index (1+ mule--position-index))
-               (when (>= mule--position-index ring-len)
-                 (setq mule--position-index 0))
-               (let* ((m (nth mule--position-index mule--position-ring))
+               (setq donky--position-index (1+ donky--position-index))
+               (when (>= donky--position-index ring-len)
+                 (setq donky--position-index 0))
+               (let* ((m (nth donky--position-index donky--position-ring))
                       (buf (and m (marker-buffer m))))
                  (if (and buf (> (marker-position m) 0))
                      (setq target m)
@@ -302,19 +308,19 @@ recorded positions. Skips markers whose buffer has been killed."
           (progn
             (pop-to-buffer (marker-buffer target))
             (goto-char target)
-            (setq mule--last-tracked-state (cons (current-buffer) (point)))
+            (setq donky--last-tracked-state (cons (current-buffer) (point)))
             (message "Position %d/%d"
-                     (1+ mule--position-index) ring-len))
+                     (1+ donky--position-index) ring-len))
         (user-error "No valid positions in ring")))))
 
-(defun mule-goto-line ()
+(defun donky-goto-line ()
   "Go to line number."
   (interactive)
   (let ((target-line (read-number "Line: ")))
     (goto-char (point-min))
     (forward-line (1- target-line))))
 
-(defun mule-switch-other-buffer ()
+(defun donky-switch-other-buffer ()
   "Switch to previous buffer."
   (interactive)
   (switch-to-buffer (other-buffer (current-buffer))))
@@ -323,7 +329,7 @@ recorded positions. Skips markers whose buffer has been killed."
 ;;; Indentation Commands
 ;;; ---------------------------------------------------------------------------
 
-(defun mule-indent-region-or-line ()
+(defun donky-indent-region-or-line ()
   "Indent active region or current line."
   (interactive)
   (if (use-region-p)
@@ -334,51 +340,51 @@ recorded positions. Skips markers whose buffer has been killed."
 ;;; Insert Entry Commands
 ;;; ---------------------------------------------------------------------------
 
-(defun mule-enter-insert ()
+(defun donky-enter-insert ()
   "Switch to INSERT state."
-  (mule-insert-mode 1))
+  (donky-insert-mode 1))
 
-(defun mule-insert-here ()
+(defun donky-insert-here ()
   "Insert at current position - enters INSERT state."
   (interactive)
   (when (and mark-active (use-region-p))
     (deactivate-mark))
-  (mule-enter-insert))
+  (donky-enter-insert))
 
-(defun mule-insert-after ()
+(defun donky-insert-after ()
   "Insert after current char - enters INSERT state."
   (interactive)
   (deactivate-mark)
   (condition-case _err
       (forward-char 1)
     (end-of-buffer nil))
-  (mule-enter-insert))
+  (donky-enter-insert))
 
-(defun mule-insert-beginning-of-line ()
+(defun donky-insert-beginning-of-line ()
   "Insert at beginning of line - enters INSERT state."
   (interactive)
   (when (and mark-active (use-region-p))
     (deactivate-mark))
   (beginning-of-line)
-  (mule-enter-insert))
+  (donky-enter-insert))
 
-(defun mule-insert-end-of-line ()
+(defun donky-insert-end-of-line ()
   "Insert at end of line - enters INSERT state."
   (interactive)
   (when (and mark-active (use-region-p))
     (deactivate-mark))
   (move-end-of-line 1)
-  (mule-enter-insert))
+  (donky-enter-insert))
 
-(defun mule-open-below ()
+(defun donky-open-below ()
   "Open a new line below and enter INSERT state."
   (interactive)
   (when (region-active-p) (deactivate-mark))
   (move-end-of-line 1)
   (newline-and-indent)
-  (mule-enter-insert))
+  (donky-enter-insert))
 
-(defun mule-open-above ()
+(defun donky-open-above ()
   "Open a new line above and enter INSERT state."
   (interactive)
   (when (region-active-p) (deactivate-mark))
@@ -386,9 +392,9 @@ recorded positions. Skips markers whose buffer has been killed."
   (newline-and-indent)
   (forward-line -1)
   (indent-according-to-mode)
-  (mule-enter-insert))
+  (donky-enter-insert))
 
-(defun mule-change ()
+(defun donky-change ()
   "Change marked char or region - enters INSERT state."
   (interactive)
   (if (use-region-p)
@@ -396,11 +402,11 @@ recorded positions. Skips markers whose buffer has been killed."
         (if (bound-and-true-p rectangle-mark-mode)
             (call-interactively #'string-rectangle)
           (delete-region (mark) (point)))
-        (mule-enter-insert))
+        (donky-enter-insert))
     (delete-char 1)
-    (mule-enter-insert)))
+    (donky-enter-insert)))
 
-(defun mule-org-todo ()
+(defun donky-org-todo ()
   "Toggle headline TODO state between TODO and DONE.
 
 Uses `org-element-at-point' to detect :todo-type property and
@@ -422,28 +428,28 @@ dispatches `org-todo' accordingly. No keyword string parsing needed."
         (org-todo 'todo))))))
 
 ;;; ---------------------------------------------------------------------------
-;;; DWIM Commands
+;;; Enter DWIM
 ;;; ---------------------------------------------------------------------------
 
-(defvar mule--enter-rules nil
+(defvar donky--enter-rules nil
   "List of (ELEMENT-TYPE PROPERTY COMMAND1 COMMAND2 ...) for ENTER DWIM dispatch.")
 
-(defvar-local mule--saved-ret-binding nil
-  "Saved RET binding from buffer's local map when entering MULE Normal.")
+(defvar-local donky--saved-ret-binding nil
+  "Saved RET binding from buffer's local map when entering DONKY Normal.")
 
-(defvar mule-editing-modes
+(defvar donky-editing-modes
   '(prog-mode text-mode org-mode fundamental-mode conf-mode markdown-mode gfm-mode)
   "Major modes where Enter should be blocked to prevent accidental line breaks.")
 
-(defun mule--editing-mode-p ()
-  "Return non-nil if current major mode is in `mule-editing-modes'."
-  (member major-mode mule-editing-modes))
+(defun donky--editing-mode-p ()
+  "Return non-nil if current major mode is in `donky-editing-modes'."
+  (member major-mode donky-editing-modes))
 
-(defun mule--register-enter-rule (rule)
+(defun donky--register-enter-rule (rule)
   "Register RULE for ENTER DWIM dispatch."
-  (add-to-list 'mule--enter-rules rule t))
+  (add-to-list 'donky--enter-rules rule t))
 
-(defmacro mule-add-enter-rule (element-type property &rest commands)
+(defmacro donky-add-enter-rule (element-type property &rest commands)
   "Add an ENTER rule with element type, property, and command fallback.
 
 ELEMENT-TYPE specifies the org element type
@@ -451,18 +457,18 @@ ELEMENT-TYPE specifies the org element type
 PROPERTY is the attribute to check on the element.
 COMMANDS is a list of functions tried sequentially until one succeeds.
 
-See `mule-enter-dwim' for how these rules are evaluated."
+See `donky-enter-dwim' for how these rules are evaluated."
   (declare (indent 2))
-  `(mule--register-enter-rule '(,element-type ,property ,@commands)))
+  `(donky--register-enter-rule '(,element-type ,property ,@commands)))
 
-(defcustom mule-default-enter-rules-enabled t
+(defcustom donky-default-enter-rules-enabled t
   "If non-nil, install default ENTER rules on load.
-  
-  Set to nil in `config.el' if you want to define rules manually."
-  :type 'boolean
-  :group 'mule)
 
-(defun mule--find-enter-handler ()
+Set to nil in `config.el' if you want to define rules manually."
+  :type 'boolean
+  :group 'donky)
+
+(defun donky--find-enter-handler ()
   "Find command for Enter key based on element at point.
 
 Checks context first, then parent, then ancestors — always trying all rules
@@ -477,7 +483,7 @@ Returns command symbol or nil if no handler matches."
                          (org-element-lineage parent)))
          (result nil))
     ;; Context FIRST (inline elements like links within tables/headlines)
-    (dolist (rule mule--enter-rules)
+    (dolist (rule donky--enter-rules)
       (when (null result)
         (let ((rule-type (nth 0 rule))
               (rule-cmds (nthcdr 2 rule)))
@@ -492,7 +498,7 @@ Returns command symbol or nil if no handler matches."
     ;; Parent, then ancestors — ALL rules checked per element level
     (dolist (elem (cons parent ancestors))
       (when (null result)
-        (dolist (rule mule--enter-rules)
+        (dolist (rule donky--enter-rules)
           (when (null result)
             (let ((rule-type (nth 0 rule))
                   (rule-prop (nth 1 rule))
@@ -509,12 +515,12 @@ Returns command symbol or nil if no handler matches."
                     (setq result candidate)))))))))
     result))
 
-(defun mule--execute-handler (cmd)
+(defun donky--execute-handler (cmd)
   "Execute CMD if it exists and is callable."
   (when (and cmd (fboundp cmd) (commandp cmd))
     (call-interactively cmd)))
 
-(defun mule--org-agenda-enter-handler ()
+(defun donky--org-agenda-enter-handler ()
   "Handle Enter in `org-agenda' mode. Return t if handled, otherwise nil."
   (when (and (fboundp 'org-agenda-mode-p)
              (boundp 'org-agenda-mode-map)
@@ -526,54 +532,58 @@ Returns command symbol or nil if no handler matches."
         (call-interactively ret-cmd)
         t))))
 
-(defun mule--org-mode-enter-handler ()
+(defun donky--org-mode-enter-handler ()
   "Handle Enter in `org-mode' and markdown modes. Return t if handled."
   (when (or (eq major-mode 'org-mode)
             (eq major-mode 'markdown-mode)
             (eq major-mode 'gfm-mode))
-    (let ((handler (mule--find-enter-handler)))
+    (let ((handler (donky--find-enter-handler)))
       (when handler
-        (mule--execute-handler handler)
+        (donky--execute-handler handler)
         t))))
 
-(defun mule--non-editing-enter-handler ()
+(defun donky--non-editing-enter-handler ()
   "Handle Enter in non-editing modes. Return t if handled."
-  (unless (mule--editing-mode-p)
-    (when (and mule--saved-ret-binding
-               (not (eq mule--saved-ret-binding 'undefined))
-               (not (keymapp mule--saved-ret-binding))
-               (commandp mule--saved-ret-binding))
-      (call-interactively mule--saved-ret-binding)
+  (unless (donky--editing-mode-p)
+    (when (and donky--saved-ret-binding
+               (not (eq donky--saved-ret-binding 'undefined))
+               (not (keymapp donky--saved-ret-binding))
+               (commandp donky--saved-ret-binding))
+      (call-interactively donky--saved-ret-binding)
       t)))
 
-(when mule-default-enter-rules-enabled
-  (mule-add-enter-rule item :checkbox org-toggle-checkbox)
-  (mule-add-enter-rule headline :todo-type mule-org-todo)
-  (mule-add-enter-rule link nil org-open-at-point markdown-follow-thing-at-point browse-url-at-point))
+(when donky-default-enter-rules-enabled
+  (donky-add-enter-rule item :checkbox org-toggle-checkbox)
+  (donky-add-enter-rule headline :todo-type donky-org-todo)
+  (donky-add-enter-rule link nil org-open-at-point markdown-follow-thing-at-point browse-url-at-point))
 
-(defun mule-enter-dwim ()
-  "Smart Return handler for MULE Normal State."
+(defun donky-enter-dwim ()
+  "Smart Return handler for DONKY Normal State."
   (interactive)
   (cond
-   ((mule--org-agenda-enter-handler))
-   ((mule--org-mode-enter-handler))
-   ((mule--non-editing-enter-handler))))
+   ((donky--org-agenda-enter-handler))
+   ((donky--org-mode-enter-handler))
+   ((donky--non-editing-enter-handler))))
 
-(add-hook 'mule-normal-mode-hook
+(add-hook 'donky-normal-mode-hook
           (lambda ()
-            (unless (mule--editing-mode-p)
-              (setq mule--saved-ret-binding
+            (unless (donky--editing-mode-p)
+              (setq donky--saved-ret-binding
                     (lookup-key (current-local-map) (kbd "RET")))))
           t)
 
-(defun mule--in-org-src-block-p ()
+;;; ---------------------------------------------------------------------------
+;;; Comment DWIM
+;;; ---------------------------------------------------------------------------
+
+(defun donky--in-org-src-block-p ()
   "Return non-nil if point is inside an Org source block."
   (and (eq major-mode 'org-mode)
        (fboundp 'org-element-at-point)
        (let ((elem (org-element-at-point)))
          (and (consp elem) (eq (car elem) 'src-block)))))
 
-(defun mule-comment-dwim ()
+(defun donky-comment-dwim ()
   "Comment/uncomment whole lines in region, or current line if no region.
 
 When inside an Org source block, delegates to the block's native
@@ -581,7 +591,7 @@ major mode via `org-edit-special' for language-aware commenting,
 then returns to the Org buffer."
   (interactive)
   (cond
-   ((mule--in-org-src-block-p)
+   ((donky--in-org-src-block-p)
     (let ((has-region (use-region-p))
           (cur-line (line-number-at-pos))
           (reg-beg-line (when (use-region-p)
@@ -609,7 +619,7 @@ then returns to the Org buffer."
             (org-edit-src-exit)
             (when has-region (deactivate-mark)))
         (error
-         (message "mule-comment-dwim (org-src): %s"
+         (message "donky-comment-dwim (org-src): %s"
                   (error-message-string err))))))
    (t
     (if (use-region-p)
@@ -629,7 +639,7 @@ then returns to the Org buffer."
 ;;; Clipboard Tools Detection
 ;;; ---------------------------------------------------------------------------
 
-(defvar mule--clipboard-tools-available nil
+(defvar donky--clipboard-tools-available nil
   "Non-nil when system clipboard integration is available.
 
 Checked synchronously at load time.  Non-nil when the platform
@@ -637,13 +647,12 @@ supports native clipboard access or when at least one of
 `wl-copy' (Wayland), `xclip'/'xsel' (X11), or `pbcopy' (macOS)
 is found in the variable `exec-path'.")
 
-;; Track whether we've shown the clipboard warning this session
-(defvar mule--clipboard-warning-shown nil
+(defvar donky--clipboard-warning-shown nil
   "Non-nil after showing clipboard warning once per session.
 
 Prevents spamming users with repeated tips on every yank operation.")
 
-(defun mule--detect-clipboard-tools ()
+(defun donky--detect-clipboard-tools ()
   "Detect available system clipboard tools.
 
 Checks for wl-clipboard (Wayland), xclip/xsel (X11), and
@@ -663,10 +672,10 @@ is assumed. Returns non-nil if any tool or native support is found."
    (t nil)))
 
 ;; Run detection synchronously at load time
-(setq mule--clipboard-tools-available (mule--detect-clipboard-tools))
+(setq donky--clipboard-tools-available (donky--detect-clipboard-tools))
 
-(unless (or mule--clipboard-tools-available noninteractive)
-  (message "Warning (mule-modal): No system clipboard tools detected.
+(unless (or donky--clipboard-tools-available noninteractive)
+  (message "Warning (donky): No system clipboard tools detected.
     Yank will fall back to the kill-ring. Install wl-clipboard
     (Wayland), xclip or xsel (X11) for system clipboard integration."))
 
@@ -674,7 +683,7 @@ is assumed. Returns non-nil if any tool or native support is found."
 ;;; Clipboard Platform Diagnostics and Debugging
 ;;; ---------------------------------------------------------------------------
 
-(defun mule--platform-info ()
+(defun donky--platform-info ()
   "Return a plist describing the current execution environment.
 
 Includes system type, display backend, terminal type, and clipboard
@@ -683,22 +692,22 @@ availability. Useful for debugging platform-specific issues."
         :display-type (if (display-graphic-p) 'gui 'terminal)
         :tty-type (tty-type)
         :term-env (getenv "TERM")
-        :clipboard-tools-available mule--clipboard-tools-available
+        :clipboard-tools-available donky--clipboard-tools-available
         :native-comp (fboundp 'native-comp-available-p)
         :emacs-version emacs-version))
 
-(defun mule-debug-platform ()
+(defun donky-debug-platform ()
   "Display detailed platform information for troubleshooting.
 
 Shows system type, display backend, terminal configuration,
 and clipboard tool availability. Useful when reporting bugs
 or debugging platform-specific issues.
 
-Output goes to a temporary buffer named '*MULE Platform Debug*'."
+Output goes to a temporary buffer named '*DONKY Platform Debug*'."
   (interactive)
-  (let ((info (mule--platform-info)))
-    (with-output-to-temp-buffer "*MULE Platform Debug*"
-      (princ "=== MULE Modal Platform Diagnostics ===\n\n")
+  (let ((info (donky--platform-info)))
+    (with-output-to-temp-buffer "*DONKY Platform Debug*"
+      (princ "=== DONKY Modal Platform Diagnostics ===\n\n")
 
       (princ "--- System Information ---\n")
       (princ (format "Emacs Version: %s\n" (plist-get info :emacs-version)))
@@ -759,7 +768,7 @@ Output goes to a temporary buffer named '*MULE Platform Debug*'."
       (princ "\n=== End of Diagnostics ===\n")
       (princ "\nPress 'q' to close this buffer.\n"))
 
-    (with-current-buffer "*MULE Platform Debug*"
+    (with-current-buffer "*DONKY Platform Debug*"
       (let ((local-map (make-sparse-keymap)))
         (set-keymap-parent local-map
                            (if (boundp 'help-map)
@@ -773,7 +782,7 @@ Output goes to a temporary buffer named '*MULE Platform Debug*'."
 ;;; Yank and Delete Commands
 ;;; ---------------------------------------------------------------------------
 
-(defun mule--clipboard-yank ()
+(defun donky--clipboard-yank ()
   "Yank from the system clipboard with `kill-ring' fallback.
 
 Invokes `clipboard-yank' when the function is available; otherwise
@@ -796,15 +805,15 @@ Shows platform-appropriate installation tips only once per session."
                 platform-context
                 (error-message-string err)))))
   ;; Show tip only once, and only for platforms that actually need external tools
-  (when (and (not mule--clipboard-warning-shown)
+  (when (and (not donky--clipboard-warning-shown)
              (not (display-graphic-p))
-             (not mule--clipboard-tools-available)
+             (not donky--clipboard-tools-available)
              (not (eq system-type 'darwin))
              (not (eq system-type 'windows-nt)))
-    (setq mule--clipboard-warning-shown t)
+    (setq donky--clipboard-warning-shown t)
     (message "Tip: Install wl-clipboard (Wayland) or xclip/xsel (X11) for system clipboard.")))
 
-(defun mule--delete-active-region-safe ()
+(defun donky--delete-active-region-safe ()
   "Delete active region if one exists.
 
 Uses the function `kill-active-region' if available (Emacs 29+), falling back to
@@ -814,25 +823,25 @@ the function `delete-active-region'.  Handles both cases gracefully."
         (kill-active-region)
       (delete-active-region))))
 
-(defun mule-yank ()
+(defun donky-yank ()
   "Yank clipboard content, replacing the active region if present.
 
 Falls back to the kill ring when the system clipboard is
 inaccessible. This provides consistent behavior across GUI and
 terminal Emacs on Linux (X11/Wayland), macOS, and Windows."
   (interactive)
-  (mule--delete-active-region-safe)
-  (mule--clipboard-yank))
+  (donky--delete-active-region-safe)
+  (donky--clipboard-yank))
 
-(defun mule-yank-pop ()
+(defun donky-yank-pop ()
   "Replace the last yanked text with the next `kill-ring' entry.
 
 Removes the active region first if one is present."
   (interactive)
-  (mule--delete-active-region-safe)
+  (donky--delete-active-region-safe)
   (yank-pop))
 
-(defun mule-delete ()
+(defun donky-delete ()
   "Delete character or region."
   (interactive)
   (if (use-region-p)
@@ -846,60 +855,60 @@ Removes the active region first if one is present."
 ;;; Mark and Text Object Selection Commands
 ;;; ---------------------------------------------------------------------------
 
-(defvar mule-visual-anchor nil
+(defvar donky-visual-anchor nil
   "Anchor position for visual line selection.")
 
-(defun mule-visual-line-toggle ()
+(defun donky-visual-line-toggle ()
   "Start/cancel visual line selection."
   (interactive)
   (if (region-active-p)
       (progn
         (deactivate-mark)
-        (setq mule-visual-anchor nil)
+        (setq donky-visual-anchor nil)
         (message "Visual line: cancelled"))
-    (setq mule-visual-anchor (line-beginning-position))
+    (setq donky-visual-anchor (line-beginning-position))
     (set-mark (line-beginning-position))
     (end-of-line)
     (activate-mark)
     (message "Visual line: j/k to extend, V to cancel")))
 
-(defun mule-visual-next-line ()
+(defun donky-visual-next-line ()
   "Move down. Extend visual selection if active."
   (interactive)
-  (if (and (region-active-p) mule-visual-anchor)
+  (if (and (region-active-p) donky-visual-anchor)
       (progn
         (forward-line 1)
-        (if (> (line-beginning-position) mule-visual-anchor)
+        (if (> (line-beginning-position) donky-visual-anchor)
             (progn
-              (set-mark mule-visual-anchor)
+              (set-mark donky-visual-anchor)
               (end-of-line))
           (progn
             (set-mark (save-excursion
-                        (goto-char mule-visual-anchor)
+                        (goto-char donky-visual-anchor)
                         (line-end-position)))
             (beginning-of-line)))
         (activate-mark))
     (forward-line 1)))
 
-(defun mule-visual-previous-line ()
+(defun donky-visual-previous-line ()
   "Move up. Extend visual selection if active."
   (interactive)
-  (if (and (region-active-p) mule-visual-anchor)
+  (if (and (region-active-p) donky-visual-anchor)
       (progn
         (forward-line -1)
-        (if (< (line-beginning-position) mule-visual-anchor)
+        (if (< (line-beginning-position) donky-visual-anchor)
             (progn
               (set-mark (save-excursion
-                          (goto-char mule-visual-anchor)
+                          (goto-char donky-visual-anchor)
                           (line-end-position)))
               (beginning-of-line))
           (progn
-            (set-mark mule-visual-anchor)
+            (set-mark donky-visual-anchor)
             (end-of-line)))
         (activate-mark))
     (forward-line -1)))
 
-(defun mule-rectangle-mark-mode ()
+(defun donky-rectangle-mark-mode ()
   "Toggle rectangle mark mode."
   (interactive)
   (if (bound-and-true-p rectangle-mark-mode)
@@ -909,7 +918,7 @@ Removes the active region first if one is present."
     (rectangle-mark-mode 1)
     (right-char 1)))
 
-(defun mule-mark-inner ()
+(defun donky-mark-inner ()
   "Mark text INSIDE CHAR pairs (excluding delimiters)."
   (interactive)
   (let* ((default-char (char-after))
@@ -961,7 +970,7 @@ Removes the active region first if one is present."
       (error "Empty selection between %c and %c" open-char close-char))
     (message "Selected content for '%c'" open-char)))
 
-(defun mule-mark-outer ()
+(defun donky-mark-outer ()
   "Mark text INCLUDING CHAR pairs (delimiters included)."
   (interactive)
   (let* ((default-char (char-after))
@@ -1013,7 +1022,7 @@ Removes the active region first if one is present."
       (error "Empty selection between %c and %c" open-char close-char))
     (message "Selected OUTER content including '%c'" open-char)))
 
-(defun mule-mark-sexp-inner ()
+(defun donky-mark-sexp-inner ()
   "Mark content inside the balanced expression at point.
 
 Uses the syntax table to identify delimiters (parentheses,
@@ -1039,7 +1048,7 @@ within, excluding the delimiters themselves."
     (activate-mark)
     (message "Marked inner expression")))
 
-(defun mule-mark-sexp-outer ()
+(defun donky-mark-sexp-outer ()
   "Mark the balanced expression at point, including delimiters.
 
 Uses the syntax table to identify delimiters (parentheses,
@@ -1062,7 +1071,7 @@ and marks it including delimiters."
     (activate-mark)
     (message "Marked outer expression")))
 
-(defun mule-mark-word ()
+(defun donky-mark-word ()
   "Select the entire word at or adjacent to point."
   (interactive)
   (unless (and (char-after)
@@ -1072,14 +1081,14 @@ and marks it including delimiters."
   (mark-word)
   (message "Word marked"))
 
-(defun mule-mark-sentence ()
+(defun donky-mark-sentence ()
   "Select sentence at point."
   (interactive)
   (backward-sentence 1)
   (mark-end-of-sentence 1)
   (message "Sentence marked"))
 
-(defun mule-mark-paragraph ()
+(defun donky-mark-paragraph ()
   "Select the paragraph at or adjacent to point."
   (interactive)
   (backward-paragraph 1)
@@ -1088,7 +1097,7 @@ and marks it including delimiters."
   (activate-mark)
   (message "Paragraph marked"))
 
-(defun mule-mark-symbol ()
+(defun donky-mark-symbol ()
   "Select the entire symbol at or adjacent to point.
 
 Trailing commas or periods are omitted from the selection."
@@ -1106,170 +1115,170 @@ Trailing commas or periods are omitted from the selection."
   (message "Symbol marked"))
 
 ;;; ---------------------------------------------------------------------------
-;;; Mule Normal Mode Keymap Definition
+;;; Donky Normal Mode Keymap Definition
 ;;; ---------------------------------------------------------------------------
 
-(defvar mule-normal-mode-map nil
-  "Keymap for MULE Normal state.")
+(defvar donky-normal-mode-map nil
+  "Keymap for DONKY Normal state.")
 
-(when (null mule-normal-mode-map)
-  (setq mule-normal-mode-map (make-sparse-keymap)))
+(when (null donky-normal-mode-map)
+  (setq donky-normal-mode-map (make-sparse-keymap)))
 
-(suppress-keymap mule-normal-mode-map t)
+(suppress-keymap donky-normal-mode-map t)
 
 ;; Navigation
-(keymap-set mule-normal-mode-map "h" #'backward-char)
-(keymap-set mule-normal-mode-map "j" #'next-line)
-(keymap-set mule-normal-mode-map "k" #'previous-line)
-(keymap-set mule-normal-mode-map "l" #'forward-char)
+(keymap-set donky-normal-mode-map "h" #'backward-char)
+(keymap-set donky-normal-mode-map "j" #'next-line)
+(keymap-set donky-normal-mode-map "k" #'previous-line)
+(keymap-set donky-normal-mode-map "l" #'forward-char)
 
 ;; Visual Line Extension
-(keymap-set mule-normal-mode-map "J" #'mule-visual-next-line)
-(keymap-set mule-normal-mode-map "K" #'mule-visual-previous-line)
+(keymap-set donky-normal-mode-map "J" #'donky-visual-next-line)
+(keymap-set donky-normal-mode-map "K" #'donky-visual-previous-line)
 
 ;; Insert mode entry
-(keymap-set mule-normal-mode-map "A" #'mule-insert-end-of-line)
-(keymap-set mule-normal-mode-map "I" #'mule-insert-beginning-of-line)
-(keymap-set mule-normal-mode-map "O" #'mule-open-above)
-(keymap-set mule-normal-mode-map "a" #'mule-insert-after)
-(keymap-set mule-normal-mode-map "i" #'mule-insert-here)
-(keymap-set mule-normal-mode-map "o" #'mule-open-below)
+(keymap-set donky-normal-mode-map "A" #'donky-insert-end-of-line)
+(keymap-set donky-normal-mode-map "I" #'donky-insert-beginning-of-line)
+(keymap-set donky-normal-mode-map "O" #'donky-open-above)
+(keymap-set donky-normal-mode-map "a" #'donky-insert-after)
+(keymap-set donky-normal-mode-map "i" #'donky-insert-here)
+(keymap-set donky-normal-mode-map "o" #'donky-open-below)
 
 ;; Editing operations
-(keymap-set mule-normal-mode-map "D" #'kill-line)
-(keymap-set mule-normal-mode-map "c" #'mule-change)
-(keymap-set mule-normal-mode-map "d" #'mule-delete)
-(keymap-set mule-normal-mode-map "x" #'mule-delete)
-(keymap-set mule-normal-mode-map "C" #'mule-comment-dwim)
-(keymap-set mule-normal-mode-map "C-j" #'join-line)
+(keymap-set donky-normal-mode-map "D" #'kill-line)
+(keymap-set donky-normal-mode-map "c" #'donky-change)
+(keymap-set donky-normal-mode-map "d" #'donky-delete)
+(keymap-set donky-normal-mode-map "x" #'donky-delete)
+(keymap-set donky-normal-mode-map "C" #'donky-comment-dwim)
+(keymap-set donky-normal-mode-map "C-j" #'join-line)
 
 ;; Yank/Paste
-(keymap-set mule-normal-mode-map "P" #'mule-yank-pop)
-(keymap-set mule-normal-mode-map "p" #'mule-yank)
-(keymap-set mule-normal-mode-map "y" #'kill-ring-save)
+(keymap-set donky-normal-mode-map "P" #'donky-yank-pop)
+(keymap-set donky-normal-mode-map "p" #'donky-yank)
+(keymap-set donky-normal-mode-map "y" #'kill-ring-save)
 
 ;; Motions
-(keymap-set mule-normal-mode-map "B" #'backward-sexp)
-(keymap-set mule-normal-mode-map "W" #'forward-sexp)
-(keymap-set mule-normal-mode-map "b" #'backward-word)
-(keymap-set mule-normal-mode-map "w" #'forward-word)
-(keymap-set mule-normal-mode-map "S" #'mule-jump-back)
+(keymap-set donky-normal-mode-map "B" #'backward-sexp)
+(keymap-set donky-normal-mode-map "W" #'forward-sexp)
+(keymap-set donky-normal-mode-map "b" #'backward-word)
+(keymap-set donky-normal-mode-map "w" #'forward-word)
+(keymap-set donky-normal-mode-map "S" #'donky-jump-back)
 
 ;; Visual selection
-(keymap-set mule-normal-mode-map "V" #'mule-visual-line-toggle)
-(keymap-set mule-normal-mode-map "v" #'set-mark-command)
+(keymap-set donky-normal-mode-map "V" #'donky-visual-line-toggle)
+(keymap-set donky-normal-mode-map "v" #'set-mark-command)
 
 ;; Mark objects
-(keymap-set mule-normal-mode-map "m A" #'mule-mark-sexp-outer)
-(keymap-set mule-normal-mode-map "m a" #'mule-mark-outer)
-(keymap-set mule-normal-mode-map "m I" #'mule-mark-sexp-inner)
-(keymap-set mule-normal-mode-map "m i" #'mule-mark-inner)
-(keymap-set mule-normal-mode-map "m p" #'mule-mark-paragraph)
-(keymap-set mule-normal-mode-map "m s" #'mule-mark-sentence)
-(keymap-set mule-normal-mode-map "m v" #'mule-rectangle-mark-mode)
-(keymap-set mule-normal-mode-map "m w" #'mule-mark-word)
-(keymap-set mule-normal-mode-map "m W" #'mule-mark-symbol)
+(keymap-set donky-normal-mode-map "m A" #'donky-mark-sexp-outer)
+(keymap-set donky-normal-mode-map "m a" #'donky-mark-outer)
+(keymap-set donky-normal-mode-map "m I" #'donky-mark-sexp-inner)
+(keymap-set donky-normal-mode-map "m i" #'donky-mark-inner)
+(keymap-set donky-normal-mode-map "m p" #'donky-mark-paragraph)
+(keymap-set donky-normal-mode-map "m s" #'donky-mark-sentence)
+(keymap-set donky-normal-mode-map "m v" #'donky-rectangle-mark-mode)
+(keymap-set donky-normal-mode-map "m w" #'donky-mark-word)
+(keymap-set donky-normal-mode-map "m W" #'donky-mark-symbol)
 
 ;; Buffer navigation
-(keymap-set mule-normal-mode-map "%" #'mark-whole-buffer)
-(keymap-set mule-normal-mode-map "." #'repeat)
-(keymap-set mule-normal-mode-map ":" #'mule-goto-line)
-(keymap-set mule-normal-mode-map ">" #'mule-indent-region-or-line)
-(keymap-set mule-normal-mode-map "?" #'mule-describe-bindings)
-(keymap-set mule-normal-mode-map "U" #'undo-redo)
-(keymap-set mule-normal-mode-map "u" #'undo)
-(keymap-set mule-normal-mode-map "z z" #'recenter-top-bottom)
-(keymap-set mule-normal-mode-map "g e" #'end-of-buffer)
-(keymap-set mule-normal-mode-map "g g" #'beginning-of-buffer)
-(keymap-set mule-normal-mode-map "g h" #'beginning-of-line)
-(keymap-set mule-normal-mode-map "g l" #'move-end-of-line)
-(keymap-set mule-normal-mode-map "g Q" #'fill-paragraph)
-(keymap-set mule-normal-mode-map "g q" #'fill-region)
-(keymap-set mule-normal-mode-map "g t" #'beginning-of-buffer)
+(keymap-set donky-normal-mode-map "%" #'mark-whole-buffer)
+(keymap-set donky-normal-mode-map "." #'repeat)
+(keymap-set donky-normal-mode-map ":" #'donky-goto-line)
+(keymap-set donky-normal-mode-map ">" #'donky-indent-region-or-line)
+(keymap-set donky-normal-mode-map "?" #'donky-describe-bindings)
+(keymap-set donky-normal-mode-map "U" #'undo-redo)
+(keymap-set donky-normal-mode-map "u" #'undo)
+(keymap-set donky-normal-mode-map "z z" #'recenter-top-bottom)
+(keymap-set donky-normal-mode-map "g e" #'end-of-buffer)
+(keymap-set donky-normal-mode-map "g g" #'beginning-of-buffer)
+(keymap-set donky-normal-mode-map "g h" #'beginning-of-line)
+(keymap-set donky-normal-mode-map "g l" #'move-end-of-line)
+(keymap-set donky-normal-mode-map "g Q" #'fill-paragraph)
+(keymap-set donky-normal-mode-map "g q" #'fill-region)
+(keymap-set donky-normal-mode-map "g t" #'beginning-of-buffer)
 
 ;; Search/Replace (Multi-key)
-(keymap-set mule-normal-mode-map "r r" #'replace-regexp)
-(keymap-set mule-normal-mode-map "r q" #'query-replace)
+(keymap-set donky-normal-mode-map "r r" #'replace-regexp)
+(keymap-set donky-normal-mode-map "r q" #'query-replace)
 
 ;; Enter/Return Key (Context Aware)
-(keymap-set mule-normal-mode-map "<enter>" #'mule-enter-dwim)
-(keymap-set mule-normal-mode-map "RET" #'mule-enter-dwim)
+(keymap-set donky-normal-mode-map "<enter>" #'donky-enter-dwim)
+(keymap-set donky-normal-mode-map "RET" #'donky-enter-dwim)
 
 ;; Block raw typing keys in NORMAL state
-(keymap-set mule-normal-mode-map "<backspace>" #'ignore)
-(keymap-set mule-normal-mode-map "<delete>" #'ignore)
-(keymap-set mule-normal-mode-map "," #'ignore)
-(keymap-set mule-normal-mode-map "-" #'ignore)
-(keymap-set mule-normal-mode-map "/" #'ignore)
-(keymap-set mule-normal-mode-map ";" #'ignore)
-(keymap-set mule-normal-mode-map "_" #'ignore)
+(keymap-set donky-normal-mode-map "<backspace>" #'ignore)
+(keymap-set donky-normal-mode-map "<delete>" #'ignore)
+(keymap-set donky-normal-mode-map "," #'ignore)
+(keymap-set donky-normal-mode-map "-" #'ignore)
+(keymap-set donky-normal-mode-map "/" #'ignore)
+(keymap-set donky-normal-mode-map ";" #'ignore)
+(keymap-set donky-normal-mode-map "_" #'ignore)
 
 ;;; ---------------------------------------------------------------------------
-;;; Mule Insert Mode Keymap Definition
+;;; Donky Insert Mode Keymap Definition
 ;;; ---------------------------------------------------------------------------
 
-(defvar mule-insert-mode-map nil
-  "Keymap for MULE Insert state.
+(defvar donky-insert-mode-map nil
+  "Keymap for DONKY Insert state.
 
 Minimal keymap: all keys fall through to the major mode and global map,
 providing unmodified Emacs behavior.  The `C-g' key runs the command
-`\mule--exit-insert' to return to Normal state.")
+`\donky--exit-insert' to return to Normal state.")
 
-(when (null mule-insert-mode-map)
-  (setq mule-insert-mode-map (make-sparse-keymap)))
+(when (null donky-insert-mode-map)
+  (setq donky-insert-mode-map (make-sparse-keymap)))
 
 ;;; ---------------------------------------------------------------------------
-;;; Mule Mode Definitions
+;;; Donky Mode Definitions
 ;;; ---------------------------------------------------------------------------
 
-(define-minor-mode mule-normal-mode
-  "MULE Normal state - modal navigation and editing.
+(define-minor-mode donky-normal-mode
+  "DONKY Normal state - modal navigation and editing.
 
-Each buffer maintains its own MULE state independently. When
-enabled, `mule-insert-mode' is automatically disabled and vice
+Each buffer maintains its own DONKY state independently. When
+enabled, `donky-insert-mode' is automatically disabled and vice
 versa."
-  :group 'mule
-  :lighter " MULE[N]"
-  :keymap mule-normal-mode-map
-  (when mule-normal-mode
-    (when (bound-and-true-p mule-insert-mode)
-      (mule-insert-mode -1))))
+  :group 'donky
+  :lighter " DONKY[N]"
+  :keymap donky-normal-mode-map
+  (when donky-normal-mode
+    (when (bound-and-true-p donky-insert-mode)
+      (donky-insert-mode -1))))
 
-(define-minor-mode mule-insert-mode
-  "MULE Insert state - passthrough to standard Emacs input.
+(define-minor-mode donky-insert-mode
+  "DONKY Insert state - passthrough to standard Emacs input.
 
 All keys fall through to the major mode and global keymap.
-\\[mule--exit-insert] returns to Normal state."
-  :group 'mule
-  :lighter " MULE[I]"
-  :keymap mule-insert-mode-map
-  (when mule-insert-mode
-    (when (bound-and-true-p mule-normal-mode)
-      (mule-normal-mode -1))))
+\\[donky--exit-insert] returns to Normal state."
+  :group 'donky
+  :lighter " DONKY[I]"
+  :keymap donky-insert-mode-map
+  (when donky-insert-mode
+    (when (bound-and-true-p donky-normal-mode)
+      (donky-normal-mode -1))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Cursor Management
 ;;; ---------------------------------------------------------------------------
 
-(defcustom mule-cursor-normal 'box
-  "Cursor shape when MULE Normal state is active.
+(defcustom donky-cursor-normal 'box
+  "Cursor shape when DONKY Normal state is active.
 
 Set to nil to fall back to global `cursor-type'."
   :type '(choice (const box) (const bar) (const hollow)
                  (cons symbol integer)
                  (const :tag "Use Global Default" nil))
-  :group 'mule)
+  :group 'donky)
 
-(defcustom mule-cursor-insert '(bar . 2)
-  "Cursor shape when MULE Insert state is active.
+(defcustom donky-cursor-insert '(bar . 2)
+  "Cursor shape when DONKY Insert state is active.
 
 Set to nil to fall back to global `cursor-type'."
   :type '(choice (const box) (const bar) (const hollow)
                  (cons symbol integer)
                  (const :tag "Use Global Default" nil))
-  :group 'mule)
+  :group 'donky)
 
-(defcustom mule--decscusr-denied-terminals
+(defcustom donky--decscusr-denied-terminals
   '("dumb" "linux")
   "List of terminal type prefixes where DECSCUSR is suppressed.
 
@@ -1285,9 +1294,9 @@ Common entries:
 Users may add entries for terminals that exhibit garbled output
 when DECSCUSR sequences are sent."
   :type '(repeat string)
-  :group 'mule)
+  :group 'donky)
 
-(defun mule--cursor-type-to-decscusr (type)
+(defun donky--cursor-type-to-decscusr (type)
   "Convert cursor TYPE to DECSCUSR escape sequence.
 
 Maps all supported shapes including hollow (blinking)."
@@ -1299,11 +1308,11 @@ Maps all supported shapes including hollow (blinking)."
     (`(hbar . ,_) "\e[4 q")    ; Steady underline
     (_ "\e[0 q")))             ; Fallback to default
 
-(defun mule--terminal-supports-decscusr-p ()
+(defun donky--terminal-supports-decscusr-p ()
   "Return non-nil if the current terminal likely supports DECSCUSR.
 
 Returns nil for graphical frames and for terminals whose type
-matches a prefix in `mule--decscusr-denied-terminals'.
+matches a prefix in `donky--decscusr-denied-terminals'.
 Falls back to the `TERM' environment variable when `tty-type'
 returns nil, and performs a conservative guess based on known
 capable terminal names."
@@ -1313,19 +1322,19 @@ capable terminal names."
            (and (not (cl-some
                       (lambda (prefix)
                         (string-prefix-p prefix tty))
-                      mule--decscusr-denied-terminals))
+                      donky--decscusr-denied-terminals))
                 (not (member tty '("dumb" "unknown" "cons25"))))))))
 
-(defun mule--send-cursor-sequence (type)
+(defun donky--send-cursor-sequence (type)
   "Send DECSCUSR escape sequence for TYPE to terminal.
 
 Suppresses output on graphical frames and on terminals listed in
-`mule--decscusr-denied-terminals'. Wraps `send-string-to-terminal'
+`donky--decscusr-denied-terminals'. Wraps `send-string-to-terminal'
 in `condition-case' to silently absorb I/O failures. Sends the
 sequence twice with a brief pause to improve delivery reliability
 on terminals that drop bytes during state transitions."
-  (when (mule--terminal-supports-decscusr-p)
-    (let ((seq (mule--cursor-type-to-decscusr type)))
+  (when (donky--terminal-supports-decscusr-p)
+    (let ((seq (donky--cursor-type-to-decscusr type)))
       (when seq
         (condition-case nil
             (progn
@@ -1334,7 +1343,7 @@ on terminals that drop bytes during state transitions."
               (send-string-to-terminal seq))
           (error nil))))))
 
-(defun mule--apply-cursor-setting (setting)
+(defun donky--apply-cursor-setting (setting)
   "Apply SETTING, falling back to global default if SETTING is nil.
 
 In terminal mode, also sends DECSCUSR escape sequence for visual
@@ -1346,106 +1355,108 @@ cursor change."
     (if setting
         (setq-local cursor-type setting)
       (kill-local-variable 'cursor-type))
-    (mule--send-cursor-sequence effective)))
+    (donky--send-cursor-sequence effective)))
 
-(defun mule--update-cursor ()
-  "Update cursor based on current MULE state."
+(defun donky--update-cursor ()
+  "Update cursor based on current DONKY state."
   (cond
-   ((bound-and-true-p mule-normal-mode)
-    (mule--apply-cursor-setting mule-cursor-normal))
-   ((bound-and-true-p mule-insert-mode)
-    (mule--apply-cursor-setting mule-cursor-insert))
+   ((bound-and-true-p donky-normal-mode)
+    (donky--apply-cursor-setting donky-cursor-normal))
+   ((bound-and-true-p donky-insert-mode)
+    (donky--apply-cursor-setting donky-cursor-insert))
    (t
-    (mule--apply-cursor-setting nil))))
+    (donky--apply-cursor-setting nil))))
 
-(add-hook 'mule-normal-mode-hook #'mule--update-cursor)
-(add-hook 'mule-insert-mode-hook #'mule--update-cursor)
+(add-hook 'donky-normal-mode-hook #'donky--update-cursor)
+(add-hook 'donky-insert-mode-hook #'donky--update-cursor)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Terminal Denylist Management
 ;;; ---------------------------------------------------------------------------
 
-(defun mule--add-denylist-entry (terminal-prefix)
-  "Add TERMINAL-PREFIX to `mule--decscusr-denied-terminals'.
+(defun donky--add-denylist-entry (terminal-prefix)
+  "Add TERMINAL-PREFIX to `donky--decscusr-denied-terminals'.
 
 Updates the custom variable and saves to your customization file."
   (interactive
    (list (read-string "Terminal type prefix to deny: ")))
-  (unless (member terminal-prefix mule--decscusr-denied-terminals)
-    (customize-set-variable 'mule--decscusr-denied-terminals
-                            (append mule--decscusr-denied-terminals (list terminal-prefix)))
-    (customize-save-variable 'mule--decscusr-denied-terminals
-                             mule--decscusr-denied-terminals)
+  (unless (member terminal-prefix donky--decscusr-denied-terminals)
+    (customize-set-variable 'donky--decscusr-denied-terminals
+                            (append donky--decscusr-denied-terminals (list terminal-prefix)))
+    (customize-save-variable 'donky--decscusr-denied-terminals
+                             donky--decscusr-denied-terminals)
     (message "Added \"%s\" to DECSCUSR denylist" terminal-prefix)))
 
-(defun mule--remove-denylist-entry (terminal-prefix)
-  "Remove TERMINAL-PREFIX from `mule--decscusr-denied-terminals'.
+(defun donky--remove-denylist-entry (terminal-prefix)
+  "Remove TERMINAL-PREFIX from `donky--decscusr-denied-terminals'.
 
 Updates the custom variable and saves to your customization file."
   (interactive
    (list (read-string "Terminal type prefix to allow: ")))
-  (when (member terminal-prefix mule--decscusr-denied-terminals)
-    (customize-set-variable 'mule--decscusr-denied-terminals
-                            (cl-remove terminal-prefix mule--decscusr-denied-terminals :test #'string=))
-    (customize-save-variable 'mule--decscusr-denied-terminals
-                             mule--decscusr-denied-terminals)
+  (when (member terminal-prefix donky--decscusr-denied-terminals)
+    (customize-set-variable 'donky--decscusr-denied-terminals
+                            (cl-remove terminal-prefix donky--decscusr-denied-terminals :test #'string=))
+    (customize-save-variable 'donky--decscusr-denied-terminals
+                             donky--decscusr-denied-terminals)
     (message "Removed \"%s\" from DECSCUSR denylist" terminal-prefix)))
 
 ;;; ---------------------------------------------------------------------------
-;;; Mule Minibuffer Safety
+;;; Donky Minibuffer Safety
 ;;; ---------------------------------------------------------------------------
 
-(defvar mule--minibuffer-pre-state nil
-  "Track MULE state before entering minibuffer.
+(defvar donky--minibuffer-pre-state nil
+  "Track DONKY state before entering minibuffer.
 
 Value is normal, insert, or nil. Not buffer-local because we
 need to read it after switching buffers.")
 
-(defun mule--minibuffer-current-state ()
-  "Return the current MULE state as a symbol."
+(defun donky--minibuffer-current-state ()
+  "Return the current DONKY state as a symbol."
   (cond
-   ((bound-and-true-p mule-normal-mode) 'normal)
-   ((bound-and-true-p mule-insert-mode) 'insert)
+   ((bound-and-true-p donky-normal-mode) 'normal)
+   ((bound-and-true-p donky-insert-mode) 'insert)
    (t nil)))
+
 (add-hook 'minibuffer-setup-hook
           (lambda ()
             ;; Capture state from the buffer that initiated the minibuffer
             (let ((orig-state
                    (with-current-buffer
                        (window-buffer (minibuffer-selected-window))
-                     (mule--minibuffer-current-state))))
-              (setq mule--minibuffer-pre-state orig-state))
+                     (donky--minibuffer-current-state))))
+              (setq donky--minibuffer-pre-state orig-state))
             ;; Force insert mode (passthrough) in the minibuffer itself
-            (when (bound-and-true-p mule-normal-mode)
-              (mule-normal-mode -1))))
+            (when (bound-and-true-p donky-normal-mode)
+              (donky-normal-mode -1))))
+
 (add-hook 'minibuffer-exit-hook
           (lambda ()
             ;; Restore state in the originating buffer
             (with-current-buffer
                 (window-buffer (minibuffer-selected-window))
-              (pcase mule--minibuffer-pre-state
-                ('normal (mule-enter-normal))
-                ('insert (mule-enter-insert))))
-            (setq mule--minibuffer-pre-state nil)))
+              (pcase donky--minibuffer-pre-state
+                ('normal (donky-enter-normal))
+                ('insert (donky-enter-insert))))
+            (setq donky--minibuffer-pre-state nil)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Insert to Normal Transition
 ;;; ---------------------------------------------------------------------------
 
-(defun mule-enter-normal ()
+(defun donky-enter-normal ()
   "Switch to NORMAL state."
   (interactive)
-  (mule-normal-mode 1))
+  (donky-normal-mode 1))
 
-(defvar-local mule--deferred-overlay-cleanup-timer nil
+(defvar-local donky--deferred-overlay-cleanup-timer nil
   "Buffer-local timer for deferred overlay cleanup after exiting insert mode.")
 
-(defvar-local mule--just-exited-from-insert nil
+(defvar-local donky--just-exited-from-insert nil
   "Buffer-local guard set when exiting insert mode.
 
 Reset on next command to prevent re-entry race conditions.")
 
-(defun mule--clear-transient-overlays ()
+(defun donky--clear-transient-overlays ()
   "Clear transient overlays left by highlighting packages.
 
 Operates on the current buffer only."
@@ -1483,7 +1494,7 @@ Operates on the current buffer only."
     (dolist (ov (overlays-in beg end))
       (when (overlay-start ov)
         (let ((face (overlay-get ov 'face)))
-          (when (or (overlay-get ov 'mule-modal-cleanup)
+          (when (or (overlay-get ov 'donky-cleanup)
                     (and face
                          (cond
                           ((symbolp face)
@@ -1505,26 +1516,26 @@ Operates on the current buffer only."
             (setq cleared (1+ cleared))))))
     cleared))
 
-(defun mule--schedule-overlay-cleanup ()
+(defun donky--schedule-overlay-cleanup ()
   "Schedule deferred cleanup for overlays created by post-command hooks."
-  (when mule--deferred-overlay-cleanup-timer
-    (cancel-timer mule--deferred-overlay-cleanup-timer))
+  (when donky--deferred-overlay-cleanup-timer
+    (cancel-timer donky--deferred-overlay-cleanup-timer))
   (let ((buf (current-buffer)))
-    (setq mule--deferred-overlay-cleanup-timer
+    (setq donky--deferred-overlay-cleanup-timer
           (run-with-idle-timer
            0.01 nil
            (lambda ()
              (when (buffer-live-p buf)
                (with-current-buffer buf
-                 (mule--clear-transient-overlays)
-                 (setq mule--deferred-overlay-cleanup-timer nil))))))))
+                 (donky--clear-transient-overlays)
+                 (setq donky--deferred-overlay-cleanup-timer nil))))))))
 
-(defun mule--reset-exit-guard ()
+(defun donky--reset-exit-guard ()
   "Reset the exit guard on next command. Allow re-entry of insert mode."
-  (setq mule--just-exited-from-insert nil)
-  (remove-hook 'pre-command-hook #'mule--reset-exit-guard))
+  (setq donky--just-exited-from-insert nil)
+  (remove-hook 'pre-command-hook #'donky--reset-exit-guard))
 
-(defun mule--exit-insert ()
+(defun donky--exit-insert ()
   "Exit insert state and enter normal mode.
 
 Removes active mark, enters normal mode, and schedules deferred
@@ -1533,163 +1544,164 @@ overlay cleanup. In the minibuffer, delegates to `keyboard-quit'."
   (if (minibufferp)
       (keyboard-quit)
     (deactivate-mark)
-    (mule-enter-normal)
-    (unless (bound-and-true-p mule-normal-mode)
-      (mule-normal-mode 1))
-    (mule--schedule-overlay-cleanup)))
+    (donky-enter-normal)
+    (unless (bound-and-true-p donky-normal-mode)
+      (donky-normal-mode 1))
+    (donky--schedule-overlay-cleanup)))
 
-(defun mule--intercept-quit-in-insert ()
+(defun donky--intercept-quit-in-insert ()
   "Intercept the quit key in insert mode by raw key event or `sp-cancel' command.
 
-Detects a raw quit keypress (or `sp-cancel') while in `mule-insert-mode',
-then calls `mule--exit-insert' directly to ensure state transition occurs."
-  (when (and (bound-and-true-p mule-insert-mode)
-             (not mule--just-exited-from-insert)
+Detects a raw quit keypress (or `sp-cancel') while in `donky-insert-mode',
+then calls `donky--exit-insert' directly to ensure state transition occurs."
+  (when (and (bound-and-true-p donky-insert-mode)
+             (not donky--just-exited-from-insert)
              (not (minibufferp))
              (or (and (boundp 'this-single-command-keys)
                       (equal this-single-command-keys [7]))
                  (eq this-command 'sp-cancel)))
     (setq this-command 'ignore
-          mule--just-exited-from-insert t)
-    (add-hook 'pre-command-hook #'mule--reset-exit-guard -100)
-    (mule--exit-insert)))
+          donky--just-exited-from-insert t)
+    (add-hook 'pre-command-hook #'donky--reset-exit-guard -100)
+    (donky--exit-insert)))
 
-(defun mule--setup-smartparens-integration ()
-  "Configure the quit-key handler in all smartparens keymaps.
+;;; ---------------------------------------------------------------------------
+;;; Smartparens Integration (Opt-in)
+;;; ---------------------------------------------------------------------------
 
-Binds the quit key in `smartparens-mode-map' and overlay keymaps
-\(`sp-pair-overlay-keymap', `sp-overlay-keymap').  Overlay keymaps have
-higher priority than minor-mode maps."
+(defun donky-setup-smartparens ()
+  "Set up Smartparens integration.
+
+Call this from your config after loading `smartparens' to bind
+C-g in smartparens overlay keymaps. This improves reliability
+of C-g escape in terminal mode when inside nested smartparens
+overlays."
+  (interactive)
   (when (and (boundp 'smartparens-mode-map)
              (keymapp smartparens-mode-map))
-    (keymap-set smartparens-mode-map "C-g" #'mule--exit-insert))
+    (keymap-set smartparens-mode-map "C-g" #'donky--exit-insert))
   (when (and (boundp 'sp-pair-overlay-keymap)
              (keymapp sp-pair-overlay-keymap))
-    (keymap-set sp-pair-overlay-keymap "C-g" #'mule--exit-insert))
+    (keymap-set sp-pair-overlay-keymap "C-g" #'donky--exit-insert))
   (when (and (boundp 'sp-overlay-keymap)
              (keymapp sp-overlay-keymap))
-    (keymap-set sp-overlay-keymap "C-g" #'mule--exit-insert)))
-
-(with-eval-after-load 'smartparens
-  (mule--setup-smartparens-integration))
-
-(when (featurep 'smartparens)
-  (mule--setup-smartparens-integration))
+    (keymap-set sp-overlay-keymap "C-g" #'donky--exit-insert)))
 
 ;; Bind C-g directly in insert mode map
-(keymap-set mule-insert-mode-map "C-g" #'mule--exit-insert)
+(keymap-set donky-insert-mode-map "C-g" #'donky--exit-insert)
 
 ;; Pre-command hook backup for packages that override C-g
-(add-hook 'pre-command-hook #'mule--intercept-quit-in-insert)
+(add-hook 'pre-command-hook #'donky--intercept-quit-in-insert)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Input Method Management
 ;;; ---------------------------------------------------------------------------
 
-(defvar-local mule--saved-input-method nil
+(defvar-local donky--saved-input-method nil
   "Buffer-local saved input method name for restoration on Insert entry.")
 
-(defun mule--on-normal-entry ()
+(defun donky--on-normal-entry ()
   "Deactivate input method when entering Normal state."
-  (when mule-normal-mode
+  (when donky-normal-mode
     (when current-input-method
-      (setq mule--saved-input-method current-input-method)
+      (setq donky--saved-input-method current-input-method)
       (deactivate-input-method))))
 
-(defun mule--on-insert-entry ()
+(defun donky--on-insert-entry ()
   "Reactivate saved input method when entering Insert state."
-  (when mule-insert-mode
-    (when (and mule--saved-input-method
+  (when donky-insert-mode
+    (when (and donky--saved-input-method
                (not current-input-method))
-      (activate-input-method mule--saved-input-method))))
+      (activate-input-method donky--saved-input-method))))
 
-(defun mule--on-input-method-activate ()
+(defun donky--on-input-method-activate ()
   "Prevent input method from staying active in Normal state."
-  (when (bound-and-true-p mule-normal-mode)
+  (when (bound-and-true-p donky-normal-mode)
     (when current-input-method
-      (setq mule--saved-input-method current-input-method)
+      (setq donky--saved-input-method current-input-method)
       (let (input-method-activate-hook)
         (deactivate-input-method)))))
 
-(add-hook 'mule-normal-mode-hook #'mule--on-normal-entry)
-(add-hook 'mule-insert-mode-hook #'mule--on-insert-entry)
-(add-hook 'input-method-activate-hook #'mule--on-input-method-activate)
+(add-hook 'donky-normal-mode-hook #'donky--on-normal-entry)
+(add-hook 'donky-insert-mode-hook #'donky--on-insert-entry)
+(add-hook 'input-method-activate-hook #'donky--on-input-method-activate)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Enhanced Mode Activation Logic
 ;;; ---------------------------------------------------------------------------
 
-(defun mule--ensure-default-state ()
-  "Enable MULE Normal state unless the current major mode is excluded.
+(defun donky--ensure-default-state ()
+  "Enable DONKY Normal state unless the current major mode is excluded.
 
-For excluded modes, enable MULE Insert state (passthrough) instead.
-Returns non-nil if MULE was enabled."
+For excluded modes, enable DONKY Insert state (passthrough) instead.
+Returns non-nil if DONKY was enabled."
   (let ((is-excluded-p
-         (or (memq major-mode mule-excluded-modes)
-             (apply #'derived-mode-p mule-excluded-modes))))
+         (or (memq major-mode donky-excluded-modes)
+             (apply #'derived-mode-p donky-excluded-modes))))
     (cond
      (is-excluded-p
-      (unless (bound-and-true-p mule-insert-mode)
-        (mule-enter-insert)
+      (unless (bound-and-true-p donky-insert-mode)
+        (donky-enter-insert)
         t))
      (t
-      (unless (or (bound-and-true-p mule-normal-mode)
-                  (bound-and-true-p mule-insert-mode))
-        (mule-enter-normal)
+      (unless (or (bound-and-true-p donky-normal-mode)
+                  (bound-and-true-p donky-insert-mode))
+        (donky-enter-normal)
         t)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Mode Indicator
 ;;; ---------------------------------------------------------------------------
 
-(defun mule-indicator ()
+(defun donky-indicator ()
   "Return state indicator string for modeline.
 
-Returns ' MULE[N]' for Normal, ' MULE[I]' for Insert, empty string
+Returns ' DONKY[N]' for Normal, ' DONKY[I]' for Insert, empty string
 otherwise. Useful if you build your own mode-line and want to
-include the MULE state."
+include the DONKY state."
   (cond
-   ((bound-and-true-p mule-normal-mode) " MULE[N]")
-   ((bound-and-true-p mule-insert-mode) " MULE[I]")
+   ((bound-and-true-p donky-normal-mode) " DONKY[N]")
+   ((bound-and-true-p donky-insert-mode) " DONKY[I]")
    (t "")))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Global Mode Toggle
 ;;; ---------------------------------------------------------------------------
 
-(define-minor-mode mule-modal
-  "Toggle MULE Modal Editing globally.
+;;;###autoload
+(define-minor-mode donky
+  "Toggle DONKY Modal Editing globally.
 
-When enabled, MULE activates its dual-state system (Normal/Insert)
+When enabled, DONKY activates its dual-state system (Normal/Insert)
 in all buffers. Buffers whose major mode is in
-`mule--excluded-modes' fall back to Insert state (passthrough).
+`donky-excluded-modes' fall back to Insert state (passthrough).
 
-When disabled, all MULE state is cleared from every buffer and
-standard Emacs behavior is restored. \\[mule-modal] or `M-x
-mule-modal' to toggle."
+When disabled, all DONKY state is cleared from every buffer and
+standard Emacs behavior is restored. \\[donky] or `M-x
+donky' to toggle."
   :global t
-  :group 'mule
-  (if mule-modal
+  :group 'donky
+  (if donky
       (progn
-        (add-hook 'after-change-major-mode-hook #'mule--ensure-default-state)
-        (add-hook 'post-command-hook #'mule--track-position)
+        (add-hook 'after-change-major-mode-hook #'donky--ensure-default-state)
+        (add-hook 'post-command-hook #'donky--track-position)
         (dolist (buf (buffer-list))
           (with-current-buffer buf
-            (mule--ensure-default-state))))
-    (remove-hook 'after-change-major-mode-hook #'mule--ensure-default-state)
-    (remove-hook 'post-command-hook #'mule--track-position)
+            (donky--ensure-default-state))))
+    (remove-hook 'after-change-major-mode-hook #'donky--ensure-default-state)
+    (remove-hook 'post-command-hook #'donky--track-position)
     (dolist (buf (buffer-list))
       (with-current-buffer buf
-        (when (bound-and-true-p mule-normal-mode)
-          (mule-normal-mode -1))
-        (when (bound-and-true-p mule-insert-mode)
-          (mule-insert-mode -1))
-        (mule--apply-cursor-setting nil)))))
+        (when (bound-and-true-p donky-normal-mode)
+          (donky-normal-mode -1))
+        (when (bound-and-true-p donky-insert-mode)
+          (donky-insert-mode -1))
+        (donky--apply-cursor-setting nil)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Provide
 ;;; ---------------------------------------------------------------------------
 
-(provide 'mule-modal)
+(provide 'donky)
 
-;;; mule-modal.el ends here
+;;; donky.el ends here
