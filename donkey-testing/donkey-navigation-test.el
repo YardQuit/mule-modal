@@ -541,6 +541,32 @@ that belongs to a completely different buffer."
       (when (buffer-live-p buf-a) (kill-buffer buf-a))
       (when (buffer-live-p buf-b) (kill-buffer buf-b)))))
 
+(ert-deftest donkey-visual-anchor-cleared-on-external-deactivate-mark ()
+  "`donkey-visual-anchor' must be cleared whenever the mark is
+deactivated, not just when cancelled via `donkey-visual-line-toggle'
+itself.  Regression test: if some other command deactivated the mark
+(e.g. `keyboard-quit'), the anchor was left stale in the SAME buffer,
+so a later, unrelated region activation (e.g. via `set-mark-command')
+would have its selection hijacked by the leftover anchor position."
+  (with-temp-buffer
+    (dotimes (_ 20) (insert "line\n"))
+    (goto-char (point-min))
+    (forward-line 5)
+    (donkey-visual-line-toggle)
+    (should donkey-visual-anchor)
+    ;; Something else deactivates the mark, bypassing
+    ;; donkey-visual-line-toggle's own cancel branch entirely.
+    (deactivate-mark)
+    (should-not donkey-visual-anchor)
+    ;; A later, unrelated selection must not be hijacked by a stale anchor.
+    (goto-char (point-min))
+    (set-mark (point))
+    (activate-mark)
+    (forward-char 2)
+    (let ((mark-before (mark)))
+      (donkey-visual-next-line)
+      (should (= (mark) mark-before)))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-visual-next-line
 ;;; ---------------------------------------------------------------------------
