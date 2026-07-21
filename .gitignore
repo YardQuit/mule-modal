@@ -1,0 +1,31 @@
+# Compiled
+*.elc
+
+# Packaging
+.cask/
+.eask/
+.eldev/
+.keg/
+.#*
+
+# Built distribution
+dist/
+
+# Backup files
+*~
+
+# Undo-tree save-files
+*.~undo-tree
+
+# Temporary files
+mule-modal-exp*.el
+*.bak
+\#*\#
+nohup.out
+*__*.org
+.project*
+
+# files
+mule--test.el
+^20*.org$
+run_tests.sh
