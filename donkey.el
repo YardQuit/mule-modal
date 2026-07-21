@@ -458,8 +458,13 @@ themselves — which are essentially never a real buffer's major mode."
       (apply #'derived-mode-p donkey-editing-modes)))
 
 (defun donkey--register-enter-rule (rule)
-  "Register RULE for ENTER DWIM dispatch."
-  (add-to-list 'donkey--enter-rules rule t))
+  "Register RULE for ENTER DWIM dispatch.
+
+Prepended to the front of `donkey--enter-rules', so the most recently
+added rule is tried first — letting a rule added later (e.g. from
+`config.el' via `with-eval-after-load') take priority over an earlier,
+same element-type/property default rule."
+  (add-to-list 'donkey--enter-rules rule))
 
 (defmacro donkey-add-enter-rule (element-type property &rest commands)
   "Add an ENTER rule with element type, property, and command fallback.

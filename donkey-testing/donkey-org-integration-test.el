@@ -212,6 +212,43 @@ buffers), confirming the derived-mode-p fix didn't overreach."
   (setq donkey--enter-rules
         (cl-remove 'test-rule donkey--enter-rules :key #'car :test 'eq)))
 
+(ert-deftest donkey-enter-dwim-register-rule-prepends-to-front ()
+  "Registering a rule PREPENDS it to the front of `donkey--enter-rules',
+so the most recently added rule is tried first.  Regression test:
+this used to append (`add-to-list' with APPEND non-nil), so a rule
+added last in config.el ended up LAST in the dispatch list instead of
+first — directly contradicting the documented \"add it last to make
+it win\" customization contract in the README."
+  (donkey-add-enter-rule test-elem-first nil cmd-a)
+  (donkey-add-enter-rule test-elem-second nil cmd-b)
+  (should (eq (car (car donkey--enter-rules)) 'test-elem-second))
+  (setq donkey--enter-rules
+        (cl-remove-if (lambda (r) (memq (car r) '(test-elem-first test-elem-second)))
+                      donkey--enter-rules)))
+
+(ert-deftest donkey-enter-dwim-later-rule-overrides-default-for-same-element ()
+  "A rule added after the defaults, for the SAME element-type and
+property as a default rule, is dispatched instead of the default.
+End-to-end regression test matching the README's documented override
+example (adding a link-handling rule last so it takes priority)."
+  (let (called-cmd)
+    (donkey-add-enter-rule link nil my-test-link-override)
+    (cl-letf (((symbol-function 'org-element-at-point)
+               (lambda () '(link (:path "http://example.com"))))
+              ((symbol-function 'org-element-context)
+               (lambda () '(link (:path "http://example.com"))))
+              ((symbol-function 'my-test-link-override)
+               (lambda () (interactive) nil))
+              ((symbol-function 'org-open-at-point)
+               (lambda () (interactive) nil))
+              ((symbol-function 'call-interactively)
+               (lambda (cmd) (setq called-cmd cmd))))
+      (let ((major-mode 'org-mode))
+        (donkey-enter-dwim)))
+    (setq donkey--enter-rules
+          (remove '(link nil my-test-link-override) donkey--enter-rules))
+    (should (eq called-cmd 'my-test-link-override))))
+
 (ert-deftest donkey-enter-dwim-config-default-rules-enabled ()
   "When `donkey-default-enter-rules-enabled' is t, default rules are installed."
   (let ((donkey-default-enter-rules-enabled t)
