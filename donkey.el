@@ -650,14 +650,6 @@ then returns to the Org buffer."
 ;;; Clipboard Tools Detection
 ;;; ---------------------------------------------------------------------------
 
-(defvar donkey--clipboard-tools-available nil
-  "Non-nil when system clipboard integration is available.
-
-Checked synchronously at load time.  Non-nil when the platform
-supports native clipboard access or when at least one of
-`wl-copy' (Wayland), `xclip'/'xsel' (X11), or `pbcopy' (macOS)
-is found in the variable `exec-path'.")
-
 (defvar donkey--clipboard-warning-shown nil
   "Non-nil after showing clipboard warning once per session.
 
@@ -668,7 +660,14 @@ Prevents spamming users with repeated tips on every yank operation.")
 
 Checks for wl-clipboard (Wayland), xclip/xsel (X11), and
 pbcopy/pbpaste (macOS).  On Windows, native clipboard integration
-is assumed.  Returns non-nil if any tool or native support is found."
+is assumed.  Returns non-nil if any tool or native support is found.
+
+Called fresh every time rather than cached, since the answer can
+differ per frame: a single `emacs --daemon' process can have both a
+GUI frame (opened via `emacsclient -c') and a terminal frame (via
+`emacsclient -t') at once, each with different clipboard capabilities,
+and a value cached once at load time would go stale for whichever
+frame didn't exist yet when the daemon started."
   (cond
    ;; macOS: always has pbcopy/pbpaste
    ((eq system-type 'darwin) t)
@@ -682,10 +681,7 @@ is assumed.  Returns non-nil if any tool or native support is found."
    ((display-graphic-p) t)
    (t nil)))
 
-;; Run detection synchronously at load time
-(setq donkey--clipboard-tools-available (donkey--detect-clipboard-tools))
-
-(unless (or donkey--clipboard-tools-available noninteractive)
+(unless (or (donkey--detect-clipboard-tools) noninteractive)
   (message "Warning (donkey): No system clipboard tools detected.
     Yank will fall back to the kill-ring. Install wl-clipboard
     (Wayland), xclip or xsel (X11) for system clipboard integration."))
@@ -703,7 +699,7 @@ availability.  Useful for debugging platform-specific issues."
         :display-type (if (display-graphic-p) 'gui 'terminal)
         :tty-type (tty-type)
         :term-env (getenv "TERM")
-        :clipboard-tools-available donkey--clipboard-tools-available
+        :clipboard-tools-available (donkey--detect-clipboard-tools)
         :native-comp (fboundp 'native-comp-available-p)
         :emacs-version emacs-version))
 
@@ -818,7 +814,7 @@ Shows platform-appropriate installation tips only once per session."
   ;; Show tip only once, and only for platforms that actually need external tools
   (when (and (not donkey--clipboard-warning-shown)
              (not (display-graphic-p))
-             (not donkey--clipboard-tools-available)
+             (not (donkey--detect-clipboard-tools))
              (not (eq system-type 'darwin))
              (not (eq system-type 'windows-nt)))
     (setq donkey--clipboard-warning-shown t)
