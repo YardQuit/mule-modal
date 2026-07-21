@@ -508,6 +508,39 @@ at point-min since forward-line -1 there has nowhere to go."
       (call-interactively #'donkey-visual-line-toggle)
       (should (region-active-p)))))
 
+(ert-deftest donkey-visual-anchor-is-buffer-local ()
+  "`donkey-visual-anchor' must be buffer-local.  Regression test: it used
+to be a plain `defvar', so starting a visual-line selection in one
+buffer leaked its anchor position into any other buffer that
+separately activated a region (e.g. via `set-mark-command'), causing
+`donkey-visual-next-line' to extend the selection using a position
+that belongs to a completely different buffer."
+  (let ((buf-a (generate-new-buffer "donkey-visual-anchor-buf-a"))
+        (buf-b (generate-new-buffer "donkey-visual-anchor-buf-b")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buf-a
+            (dotimes (_ 50) (insert "line in buffer A\n"))
+            (goto-char (point-min))
+            (forward-line 20)
+            (donkey-visual-line-toggle))
+          (with-current-buffer buf-b
+            (insert "short buffer B\nline2\nline3\n")
+            (goto-char (point-min))
+            ;; buf-b must not see buf-a's anchor at all.
+            (should-not donkey-visual-anchor)
+            ;; An unrelated region activation in buf-b (no anchor of
+            ;; its own) must behave like a plain downward motion:
+            ;; the mark must be left untouched.
+            (set-mark (point))
+            (activate-mark)
+            (forward-char 3)
+            (let ((mark-before (mark)))
+              (donkey-visual-next-line)
+              (should (= (mark) mark-before)))))
+      (when (buffer-live-p buf-a) (kill-buffer buf-a))
+      (when (buffer-live-p buf-b) (kill-buffer buf-b)))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-visual-next-line
 ;;; ---------------------------------------------------------------------------

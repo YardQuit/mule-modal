@@ -860,7 +860,7 @@ Removes the active region first if one is present."
 ;;; Mark and Text Object Selection Commands
 ;;; ---------------------------------------------------------------------------
 
-(defvar donkey-visual-anchor nil
+(defvar-local donkey-visual-anchor nil
   "Anchor position for visual line selection.")
 
 (defun donkey-visual-line-toggle ()
