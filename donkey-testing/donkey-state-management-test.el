@@ -411,6 +411,31 @@ normal mode."
     (should-not deactivated)
     (should-not entered-normal)))
 
+(ert-deftest donkey-state-intercept-quit-skips-in-excluded-mode ()
+  "In excluded-mode buffers, does not intercept.  Regression test: the
+raw key must fall through to the direct `C-g' binding instead, so
+`keyboard-quit' (called from `donkey--exit-insert' there) runs as an
+ordinary command rather than signalling `quit' from inside this
+`pre-command-hook' function — which Emacs's command loop treats as a
+hook malfunction, reporting \"Error in pre-command-hook\" and
+permanently removing this function from the hook after just one
+`C-g' in any excluded-mode buffer, for the rest of the session."
+  (let (deactivated entered-normal)
+    (with-temp-buffer
+      (let ((donkey-insert-mode t)
+            (major-mode 'comint-mode)
+            (this-command 'some-command))
+        (cl-letf (((symbol-function 'this-single-command-keys)
+                   (lambda () [7]))
+                  ((symbol-function 'deactivate-mark)
+                   (lambda () (setq deactivated t)))
+                  ((symbol-function 'donkey-enter-normal)
+                   (lambda () (setq entered-normal t))))
+          (donkey--intercept-quit-in-insert)
+          (should (eq this-command 'some-command)))))
+    (should-not deactivated)
+    (should-not entered-normal)))
+
 (ert-deftest donkey-state-intercept-quit-skips-non-c-g-key ()
   "Keys other than C-g ([7]) are not intercepted."
   (let (deactivated entered-normal)
@@ -770,7 +795,16 @@ variables are unbound."
 (ert-deftest donkey-cg-in-excluded-mode ()
   "In excluded modes, DONKEY should start in insert state.  C-g should
 delegate to `keyboard-quit' rather than flip to normal mode, since a
-flip would just get reverted immediately and silently swallow the quit."
+flip would just get reverted immediately and silently swallow the quit.
+
+Simulates the real command loop rather than using
+`donkey--simulate-cg': in an excluded-mode buffer,
+`donkey--intercept-quit-in-insert' must skip entirely (see its
+docstring — signalling `quit' from inside a `pre-command-hook'
+function gets the function permanently disabled), so `this-command'
+must already resolve to `donkey--exit-insert' via the direct `C-g'
+keymap binding before `pre-command-hook' runs, exactly as the real
+command loop would set it."
   (donkey--with-test-buffer
    (let ((donkey-excluded-modes (cons 'fundamental-mode donkey-excluded-modes))
          (quit-called nil))
@@ -781,7 +815,12 @@ flip would just get reverted immediately and silently swallow the quit."
      (should-not (bound-and-true-p donkey-normal-mode))
      (cl-letf (((symbol-function 'keyboard-quit)
                 (lambda () (setq quit-called t))))
-       (donkey--simulate-cg))
+       (let ((this-command 'donkey--exit-insert))
+         (cl-letf (((symbol-function 'this-single-command-keys)
+                    (lambda () [7])))
+           (run-hooks 'pre-command-hook))
+         (unless (eq this-command 'ignore)
+           (call-interactively this-command))))
      (should quit-called)
      (should (bound-and-true-p donkey-insert-mode))
      (should-not (bound-and-true-p donkey-normal-mode)))))

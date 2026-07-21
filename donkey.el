@@ -1577,10 +1577,22 @@ subprocess or aborting a recursive edit)."
   "Intercept the quit key in insert mode by raw key event or `sp-cancel' command.
 
 Detects a raw quit keypress (or `sp-cancel') while in `donkey-insert-mode',
-then calls `donkey--exit-insert' directly to ensure state transition occurs."
+then calls `donkey--exit-insert' directly to ensure state transition occurs.
+
+Skips excluded-mode buffers entirely: there, `donkey--exit-insert'
+calls `keyboard-quit', which signals a `quit' condition.  Emacs's
+command loop treats ANY signal from a `pre-command-hook' function as a
+malfunction, reports \"Error in pre-command-hook\", and permanently
+removes the offending function from the hook — silently and
+permanently disabling this whole interception mechanism, in every
+buffer, after the very first `C-g' in an excluded-mode buffer.
+Skipping here lets the raw key fall through to the direct `C-g'
+binding instead, so `keyboard-quit' runs as an ordinary command
+instead of from inside a hook, where signalling `quit' is safe."
   (when (and (bound-and-true-p donkey-insert-mode)
              (not donkey--just-exited-from-insert)
              (not (minibufferp))
+             (not (donkey--excluded-mode-p))
              (or (equal (this-single-command-keys) [7])
                  (eq this-command 'sp-cancel)))
     (setq this-command 'ignore
