@@ -422,8 +422,14 @@ real platform instead of the intended one."
     (should (eq (plist-get (donkey--platform-info) :display-type) 'terminal))))
 
 (ert-deftest donkey-platform-info-reflects-clipboard-tools-available ()
-  "Reflects the current value of donkey--clipboard-tools-available."
-  (let ((donkey--clipboard-tools-available 'sentinel-value))
+  "Reflects the live result of `donkey--detect-clipboard-tools', not a
+value cached once at load time.  Regression test: this used to read a
+variable computed only when the package first loaded, which could go
+stale — e.g. across different frames in an `emacs --daemon' session,
+where a GUI frame (`emacsclient -c') and a terminal frame
+(`emacsclient -t') can have different clipboard capabilities."
+  (cl-letf (((symbol-function 'donkey--detect-clipboard-tools)
+             (lambda () 'sentinel-value)))
     (should (eq (plist-get (donkey--platform-info) :clipboard-tools-available)
                 'sentinel-value))))
 
