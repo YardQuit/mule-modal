@@ -448,8 +448,14 @@ dispatches `org-todo' accordingly.  No keyword string parsing needed."
   "Major modes where Enter should be blocked to prevent accidental line breaks.")
 
 (defun donkey--editing-mode-p ()
-  "Return non-nil if current major mode is in `donkey-editing-modes'."
-  (member major-mode donkey-editing-modes))
+  "Return non-nil if current major mode is in `donkey-editing-modes'.
+
+Checks both exact membership and derivation via `derived-mode-p', so
+concrete modes like `python-mode' or `emacs-lisp-mode' (derived from
+`prog-mode') are recognized, not just the literal parent-mode symbols
+themselves — which are essentially never a real buffer's major mode."
+  (or (memq major-mode donkey-editing-modes)
+      (apply #'derived-mode-p donkey-editing-modes)))
 
 (defun donkey--register-enter-rule (rule)
   "Register RULE for ENTER DWIM dispatch."

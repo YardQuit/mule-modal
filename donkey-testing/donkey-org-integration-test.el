@@ -148,11 +148,47 @@
   (let ((major-mode 'dired-mode))
     (should-not (donkey--editing-mode-p))))
 
-(ert-deftest donkey-editing-mode-p-derived-mode-not-caught ()
-  "Modes derived from a listed mode with a different symbol name are NOT
-matched: `member' uses exact equality, not `derived-mode-p'."
-  (let ((major-mode 'python-mode))
-    (should-not (donkey--editing-mode-p))))
+(ert-deftest donkey-editing-mode-p-derived-mode-is-caught ()
+  "Modes derived from a listed mode ARE matched via `derived-mode-p',
+even though their own major-mode symbol differs from the literal
+entries in `donkey-editing-modes'.  Regression test: this used to rely
+on `member' (exact equality) only, so real code buffers like
+`emacs-lisp-mode' (derived from `prog-mode', which is essentially
+never a real buffer's literal major-mode) were never recognized as
+editing modes at all — silently defeating the entire \"block Enter to
+prevent accidental line breaks\" mechanism for ordinary code buffers."
+  (let ((major-mode 'emacs-lisp-mode))
+    (should (donkey--editing-mode-p))))
+
+(ert-deftest donkey-non-editing-enter-handler-blocks-in-derived-prog-mode ()
+  "`donkey--non-editing-enter-handler' must not fire in a real
+prog-mode-derived buffer, even when a saved RET binding is present and
+callable.  Regression test: before `donkey--editing-mode-p' recognized
+derived modes, this would have called the saved binding, e.g.
+inserting a newline via the mode's own RET command — precisely the
+\"accidental line break\" `donkey-editing-modes' exists to prevent."
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (let ((donkey--saved-ret-binding 'newline)
+          (called nil))
+      (cl-letf (((symbol-function 'newline)
+                 (lambda (&rest _) (interactive) (setq called t))))
+        (should-not (donkey--non-editing-enter-handler)))
+      (should-not called))))
+
+(ert-deftest donkey-non-editing-enter-handler-fires-outside-editing-modes ()
+  "`donkey--non-editing-enter-handler' still falls through to the saved
+RET binding in a genuinely non-editing mode (e.g. `dired-mode'-like
+buffers), confirming the derived-mode-p fix didn't overreach."
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((major-mode 'dired-mode)
+          (donkey--saved-ret-binding 'newline)
+          (called nil))
+      (cl-letf (((symbol-function 'newline)
+                 (lambda (&rest _) (interactive) (setq called t))))
+        (should (donkey--non-editing-enter-handler)))
+      (should called))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-add-enter-rule / donkey--register-enter-rule
