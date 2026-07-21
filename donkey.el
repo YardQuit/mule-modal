@@ -4,6 +4,7 @@
 ;; Author: Michael Jones <yardquit@pm.me>
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo 2.0 Max
+;; Assisted-by: Claude [Claude Code]
 ;; URL: https://github.com/yardquit/donkey
 ;; Version: 1.0.0
 ;; Package-Requires: ((emacs "29.1"))
