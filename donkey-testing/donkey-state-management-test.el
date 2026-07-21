@@ -126,6 +126,71 @@ returns \" DONKEY[I]\"."
       (should (eq (donkey--minibuffer-current-state) 'normal)))))
 
 ;;; ---------------------------------------------------------------------------
+;;; donkey--minibuffer-pre-state-stack (nested minibuffer regression)
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-minibuffer-nested-activation-restores-outer-state ()
+  "Nested/recursive minibuffer activations must not clobber each other's
+saved state.  Regression test: the pre-state used to be a single global
+slot, so an inner minibuffer's setup/exit would overwrite and then clear
+the outer minibuffer's saved state, leaving the original buffer's DONKEY
+state unrestored once the outer minibuffer finally exited."
+  (let ((buf (generate-new-buffer "donkey-nested-minibuf-test"))
+        (donkey--minibuffer-pre-state-stack nil))
+    (unwind-protect
+        (with-current-buffer buf
+          (fundamental-mode)
+          (donkey-normal-mode 1)
+          (cl-letf (((symbol-function 'minibuffer-selected-window)
+                     (lambda () 'donkey-fake-window))
+                    ((symbol-function 'window-buffer)
+                     (lambda (_win) buf)))
+            ;; Outer minibuffer opens while buf is in Normal state.
+            (run-hooks 'minibuffer-setup-hook)
+            (should (equal donkey--minibuffer-pre-state-stack '(normal)))
+            (should-not (bound-and-true-p donkey-normal-mode))
+            ;; A nested/recursive minibuffer opens on top of the outer one.
+            (run-hooks 'minibuffer-setup-hook)
+            (should (equal donkey--minibuffer-pre-state-stack '(nil normal)))
+            ;; Inner minibuffer exits first: pops its own entry only.
+            (run-hooks 'minibuffer-exit-hook)
+            (should (equal donkey--minibuffer-pre-state-stack '(normal)))
+            (should-not (bound-and-true-p donkey-normal-mode))
+            ;; Outer minibuffer exits: must still restore Normal for buf.
+            (run-hooks 'minibuffer-exit-hook)
+            (should (null donkey--minibuffer-pre-state-stack))
+            (should (bound-and-true-p donkey-normal-mode))))
+      (when (buffer-live-p buf) (kill-buffer buf)))))
+
+;;; ---------------------------------------------------------------------------
+;;; donkey--excluded-mode-p
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-excluded-mode-p-exact-match ()
+  "Returns non-nil for a major mode listed exactly in
+`donkey-excluded-modes'."
+  (with-temp-buffer
+    (let ((major-mode 'comint-mode))
+      (should (donkey--excluded-mode-p)))))
+
+(ert-deftest donkey-excluded-mode-p-derived-mode ()
+  "Returns non-nil for a major mode derived from one listed in
+`donkey-excluded-modes' (e.g. `shell-mode' from `comint-mode'), even
+though it is not an exact `member' match.  Regression test: two of the
+three call sites used to check membership only and would miss this."
+  (require 'shell)
+  (with-temp-buffer
+    (let ((major-mode 'shell-mode))
+      (should (donkey--excluded-mode-p)))))
+
+(ert-deftest donkey-excluded-mode-p-not-excluded ()
+  "Returns nil for a major mode neither listed in nor derived from one
+in `donkey-excluded-modes'."
+  (with-temp-buffer
+    (let ((major-mode 'text-mode))
+      (should-not (donkey--excluded-mode-p)))))
+
+;;; ---------------------------------------------------------------------------
 ;;; donkey--handle-non-editing-buffer / donkey--check-post-command-non-editing
 ;;; ---------------------------------------------------------------------------
 
@@ -656,19 +721,23 @@ variables are unbound."
 ;;; ---------------------------------------------------------------------------
 
 (ert-deftest donkey-cg-in-excluded-mode ()
-  "In excluded modes, DONKEY should start in insert state. C-g should not crash."
+  "In excluded modes, DONKEY should start in insert state.  C-g should
+delegate to `keyboard-quit' rather than flip to normal mode, since a
+flip would just get reverted immediately and silently swallow the quit."
   (donkey--with-test-buffer
-   (let ((donkey-excluded-modes (cons 'fundamental-mode donkey-excluded-modes)))
+   (let ((donkey-excluded-modes (cons 'fundamental-mode donkey-excluded-modes))
+         (quit-called nil))
      (donkey-normal-mode -1)
      (donkey-insert-mode -1)
      (donkey--ensure-default-state)
      (should (bound-and-true-p donkey-insert-mode))
      (should-not (bound-and-true-p donkey-normal-mode))
-     (let ((errors nil))
-       (condition-case err
-           (donkey--simulate-cg)
-         (error (push err errors)))
-       (should (null errors))))))
+     (cl-letf (((symbol-function 'keyboard-quit)
+                (lambda () (setq quit-called t))))
+       (donkey--simulate-cg))
+     (should quit-called)
+     (should (bound-and-true-p donkey-insert-mode))
+     (should-not (bound-and-true-p donkey-normal-mode)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Integration: Input Method Preservation
@@ -760,6 +829,45 @@ variables are unbound."
    (forward-word 1)
    (donkey--simulate-cg)
    (should (bound-and-true-p donkey-normal-mode))))
+
+(ert-deftest donkey-reset-exit-guard-is-buffer-local-to-originating-buffer ()
+  "The exit-insert guard must only reset once the ORIGINATING buffer is
+current again for its next command, not whichever buffer happens to run
+the next command.  Regression test: `donkey--reset-exit-guard' used to
+be registered on the global `pre-command-hook', so if a different
+buffer became current before the originating buffer's next real
+command, the guard reset there instead, then self-removed — leaving
+the originating buffer's guard stuck `t' forever and silently
+disabling the `C-g' interception fallback for it."
+  (let ((buf-a (generate-new-buffer "donkey-guard-buf-a"))
+        (buf-b (generate-new-buffer "donkey-guard-buf-b")))
+    (unwind-protect
+        (progn
+          ;; Trigger the REAL interception path (not a hand-rolled
+          ;; add-hook call) so this exercises whatever LOCAL-ness the
+          ;; actual code uses.
+          (with-current-buffer buf-a
+            (fundamental-mode)
+            (donkey-insert-mode 1)
+            (let ((this-command 'self-insert-command))
+              (cl-letf (((symbol-function 'this-single-command-keys)
+                         (lambda () [7]))
+                        ((symbol-function 'donkey--exit-insert)
+                         (lambda () nil)))
+                (donkey--intercept-quit-in-insert))))
+          (should (buffer-local-value 'donkey--just-exited-from-insert buf-a))
+          ;; Simulate the next command running in a DIFFERENT buffer.
+          (with-current-buffer buf-b
+            (run-hooks 'pre-command-hook))
+          ;; buf-a hasn't had its own next command yet, so its guard
+          ;; must still be set.
+          (should (buffer-local-value 'donkey--just-exited-from-insert buf-a))
+          ;; Now buf-a becomes current for its next real command.
+          (with-current-buffer buf-a
+            (run-hooks 'pre-command-hook))
+          (should-not (buffer-local-value 'donkey--just-exited-from-insert buf-a)))
+      (when (buffer-live-p buf-a) (kill-buffer buf-a))
+      (when (buffer-live-p buf-b) (kill-buffer buf-b)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Overlay Cleanup (Transient Faces Variants)
@@ -894,7 +1002,8 @@ post-command-hook functions."
       (progn
         (donkey-mode 1)
         (should (memq #'donkey--ensure-default-state after-change-major-mode-hook))
-        (should (memq #'donkey--track-position post-command-hook)))
+        (should (memq #'donkey--track-position post-command-hook))
+        (should (memq #'donkey--check-post-command-non-editing post-command-hook)))
     (donkey-mode -1)))
 
 (ert-deftest donkey-mode-disable-removes-hooks ()
@@ -902,7 +1011,18 @@ post-command-hook functions."
   (donkey-mode 1)
   (donkey-mode -1)
   (should-not (memq #'donkey--ensure-default-state after-change-major-mode-hook))
-  (should-not (memq #'donkey--track-position post-command-hook)))
+  (should-not (memq #'donkey--track-position post-command-hook))
+  (should-not (memq #'donkey--check-post-command-non-editing post-command-hook)))
+
+(ert-deftest donkey-mode-check-post-command-non-editing-not-registered-before-enable ()
+  "`donkey--check-post-command-non-editing' must not be a permanent,
+unconditional global hook.  Regression test: it used to be added once
+at load time regardless of whether `donkey-mode' was ever enabled, and
+was never removed by `donkey-mode's disable branch — a hook lifecycle
+leak that ran on every command in every buffer for the life of the
+Emacs session."
+  (donkey-mode -1)
+  (should-not (memq #'donkey--check-post-command-non-editing post-command-hook)))
 
 (ert-deftest donkey-mode-enable-activates-existing-buffers ()
   "Enabling donkey-mode activates normal state in existing editable buffers."
