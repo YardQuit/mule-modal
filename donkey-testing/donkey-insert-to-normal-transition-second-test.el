@@ -510,6 +510,6 @@ Only runs in environments where smartparens is absent."
   (interactive)
   (ert "^donkey-cg-" :result-buffer "*DONKEY Test Results*"))
 
-(provide 'donkey-insert-to-normal-transition-test)
+(provide 'donkey-insert-to-normal-transition-second-test)
 
     ;;; donkey-insert-to-normal-transition-second-test.el ends here
