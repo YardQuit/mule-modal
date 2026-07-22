@@ -1001,6 +1001,34 @@ delete-region rather than string-rectangle."
       (should-not insert-mode-called)
       (should-not self-insert-called))))
 
+(ert-deftest donkey-wrap-region-rectangle-mark-mode-falls-through-to-undefined ()
+  "Regression test: with `rectangle-mark-mode' active, delegates to
+`undefined' instead of self-inserting.
+
+`self-insert-command' operates on `region-beginning'/`region-end' as a
+single linear span.  Run against a rectangle selection, that inserts
+the delimiters at the rectangle's linear start/end buffer positions
+instead of on each covered line, corrupting the buffer -- confirmed
+live: a rectangle spanning columns 0-1 across three lines produced
+\"(aaa\\nbbb\\nc)cc\\n\" instead of leaving the buffer alone or wrapping
+each line."
+  (let (undefined-called insert-mode-called self-insert-called)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+                ((symbol-function 'undefined)
+                 (lambda () (interactive) (setq undefined-called t)))
+                ((symbol-function 'donkey-insert-mode)
+                 (lambda (&rest _) (setq insert-mode-called t)))
+                ((symbol-function 'self-insert-command)
+                 (lambda (&rest _) (setq self-insert-called t))))
+        (let ((rectangle-mark-mode t))
+          (donkey-wrap-region)))
+      (should undefined-called)
+      (should-not insert-mode-called)
+      (should-not self-insert-called))))
+
 (ert-deftest donkey-wrap-region-with-region-enters-insert-inserts-then-exits ()
   "With an active region, enters Insert, self-inserts, then exits back
 to Normal, in that order."
