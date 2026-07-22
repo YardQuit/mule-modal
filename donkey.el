@@ -396,6 +396,34 @@ recorded positions in this buffer."
     (delete-char 1)
     (donkey-enter-insert)))
 
+(defcustom donkey-wrap-delimiters '(?\( ?\[ ?\{ ?\" ?\' ?\`)
+  "Characters that trigger `donkey-wrap-region' in Normal state.
+
+Bound in `donkey-normal-mode-map'; only takes effect while a
+region is active (see `donkey-wrap-region').  Changing this after
+`donkey.el' has loaded has no effect on already-bound keys -- set
+it before loading, or re-run the `dolist' near
+`donkey-normal-mode-map's definition."
+  :type '(repeat character)
+  :group 'donkey)
+
+(defun donkey-wrap-region ()
+  "Insert the pressed delimiter into the active region without deselecting.
+
+Bound to each of `donkey-wrap-delimiters' in Normal state.  With
+no active region, falls through to `undefined', same as any other
+suppressed key.  With an active region, enters Insert state
+without deactivating the mark, inserts the pressed character via
+`self-insert-command' -- letting packages that hook it, such as
+Smartparens' region-wrap, act on the still-active region -- then
+returns to Normal state."
+  (interactive)
+  (if (not (use-region-p))
+      (call-interactively #'undefined)
+    (donkey-insert-mode 1)
+    (self-insert-command 1)
+    (donkey--exit-insert)))
+
 (defun donkey-org-todo ()
   "Toggle headline TODO state between TODO and DONE.
 
@@ -1175,6 +1203,10 @@ Trailing commas or periods are omitted from the selection."
 ;; Visual selection
 (keymap-set donkey-normal-mode-map "V" #'donkey-visual-line-toggle)
 (keymap-set donkey-normal-mode-map "v" #'set-mark-command)
+
+;; Wrap region with delimiter (region-active only; see donkey-wrap-region)
+(dolist (ch donkey-wrap-delimiters)
+  (keymap-set donkey-normal-mode-map (char-to-string ch) #'donkey-wrap-region))
 
 ;; Mark objects
 (keymap-set donkey-normal-mode-map "m A" #'donkey-mark-sexp-outer)
