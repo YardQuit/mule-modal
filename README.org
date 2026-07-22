@@ -484,6 +484,18 @@ normally without errors.
 
 #+end_src
 
+Or with =use-package=, in =smartparens='s =:config= block, which runs
+at the same point as =with-eval-after-load=:
+
+#+begin_src emacs-lisp
+
+  (use-package smartparens
+    :ensure t
+    :config
+    (donkey-setup-smartparens))
+
+#+end_src
+
 * Position Tracking
 
 =M-x donkey-jump-back= (bound to =S=) rotates through a ring of
