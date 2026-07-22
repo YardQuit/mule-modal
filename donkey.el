@@ -1458,15 +1458,38 @@ terminal I/O (see `donkey--last-applied-cursor-settings')."
       (puthash terminal effective donkey--last-applied-cursor-settings)
       (donkey--send-cursor-sequence effective))))
 
-(defun donkey--update-cursor ()
-  "Update cursor based on current DONKEY state."
+(defun donkey--update-cursor (&optional passive)
+  "Update cursor based on current DONKEY state.
+
+With PASSIVE non-nil, does nothing when neither `donkey-normal-mode'
+nor `donkey-insert-mode' is active in the current buffer, rather than
+resetting `cursor-type' to the default.  Used when called from the
+global `post-command-hook' (see `donkey--update-cursor-passive' and
+`donkey-mode') to resync the terminal cursor on window/buffer
+switches: that hook runs for EVERY buffer that becomes current, not
+just ones DONKEY manages, and a buffer that never ran any major-mode
+setup (so `donkey--ensure-default-state' never applied to it) would
+have `cursor-type' silently reset even though some unrelated package
+may have set it there on purpose.  Without PASSIVE -- called from
+`donkey-normal-mode-hook'/`donkey-insert-mode-hook', which only ever
+fire for buffers DONKEY itself toggled -- the reset is exactly what a
+Normal/Insert -> disabled transition needs."
   (cond
    ((bound-and-true-p donkey-normal-mode)
     (donkey--apply-cursor-setting donkey-cursor-normal))
    ((bound-and-true-p donkey-insert-mode)
     (donkey--apply-cursor-setting donkey-cursor-insert))
-   (t
+   ((not passive)
     (donkey--apply-cursor-setting nil))))
+
+(defun donkey--update-cursor-passive ()
+  "Resync the cursor via `donkey--update-cursor', passively.
+
+Registered on the global `post-command-hook' by `donkey-mode' instead
+of `donkey--update-cursor' directly, so buffers DONKEY never activated
+Normal/Insert state in are left untouched instead of having
+`cursor-type' reset out from under them."
+  (donkey--update-cursor t))
 
 (add-hook 'donkey-normal-mode-hook #'donkey--update-cursor)
 (add-hook 'donkey-insert-mode-hook #'donkey--update-cursor)
@@ -1869,14 +1892,14 @@ donkey-mode' to toggle."
         (add-hook 'after-change-major-mode-hook #'donkey--ensure-default-state)
         (add-hook 'post-command-hook #'donkey--track-position)
         (add-hook 'post-command-hook #'donkey--check-post-command-non-editing)
-        (add-hook 'post-command-hook #'donkey--update-cursor)
+        (add-hook 'post-command-hook #'donkey--update-cursor-passive)
         (dolist (buf (buffer-list))
           (with-current-buffer buf
             (donkey--ensure-default-state))))
     (remove-hook 'after-change-major-mode-hook #'donkey--ensure-default-state)
     (remove-hook 'post-command-hook #'donkey--track-position)
     (remove-hook 'post-command-hook #'donkey--check-post-command-non-editing)
-    (remove-hook 'post-command-hook #'donkey--update-cursor)
+    (remove-hook 'post-command-hook #'donkey--update-cursor-passive)
     (dolist (buf (buffer-list))
       (with-current-buffer buf
         (when (bound-and-true-p donkey-normal-mode)

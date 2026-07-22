@@ -1197,7 +1197,7 @@ post-command-hook functions."
         (should (memq #'donkey--ensure-default-state after-change-major-mode-hook))
         (should (memq #'donkey--track-position post-command-hook))
         (should (memq #'donkey--check-post-command-non-editing post-command-hook))
-        (should (memq #'donkey--update-cursor post-command-hook)))
+        (should (memq #'donkey--update-cursor-passive post-command-hook)))
     (donkey-mode -1)))
 
 (ert-deftest donkey-mode-disable-removes-hooks ()
@@ -1207,11 +1207,11 @@ post-command-hook functions."
   (should-not (memq #'donkey--ensure-default-state after-change-major-mode-hook))
   (should-not (memq #'donkey--track-position post-command-hook))
   (should-not (memq #'donkey--check-post-command-non-editing post-command-hook))
-  (should-not (memq #'donkey--update-cursor post-command-hook)))
+  (should-not (memq #'donkey--update-cursor-passive post-command-hook)))
 
 (ert-deftest donkey-mode-update-cursor-on-post-command-hook-resyncs-on-window-switch ()
-  "Regression test: `donkey--update-cursor' must run on the global
-`post-command-hook', not only on `donkey-normal-mode-hook'/
+  "Regression test: `donkey--update-cursor-passive' must run on the
+global `post-command-hook', not only on `donkey-normal-mode-hook'/
 `donkey-insert-mode-hook'.
 
 Those mode hooks only fire when a buffer's own DONKEY state actually
@@ -1227,11 +1227,47 @@ added."
       (progn
         (donkey-mode 1)
         (let ((call-count 0))
-          (cl-letf (((symbol-function 'donkey--update-cursor)
+          (cl-letf (((symbol-function 'donkey--update-cursor-passive)
                      (lambda () (setq call-count (1+ call-count)))))
             (run-hooks 'post-command-hook))
           (should (= call-count 1))))
     (donkey-mode -1)))
+
+(ert-deftest donkey-update-cursor-passive-skips-unmanaged-buffer ()
+  "Regression test: `donkey--update-cursor-passive' must NOT reset
+`cursor-type' in a buffer where neither `donkey-normal-mode' nor
+`donkey-insert-mode' is active.
+
+Confirmed live in `emacs -nw': a freshly `get-buffer-create'd buffer
+that never runs any major-mode setup function never triggers
+`after-change-major-mode-hook', so `donkey--ensure-default-state'
+never applies DONKEY state to it -- yet the global `post-command-hook'
+runs for EVERY buffer that becomes current, DONKEY-managed or not.
+Before this fix, switching to such a buffer via `switch-to-buffer'
+silently reset a `cursor-type' an unrelated package had set there on
+purpose, via `donkey--update-cursor''s unconditional \"neither mode
+active\" branch."
+  (with-temp-buffer
+    (setq-local cursor-type 'hbar)
+    (donkey--update-cursor-passive)
+    (should (local-variable-p 'cursor-type))
+    (should (eq cursor-type 'hbar))))
+
+(ert-deftest donkey-update-cursor-non-passive-still-resets-unmanaged-buffer ()
+  "Without PASSIVE, `donkey--update-cursor' still resets `cursor-type'
+to the default when neither mode is active.
+
+Regression guard for the opposite failure mode: a buffer's own
+Normal/Insert -> disabled transition (e.g. standalone
+`donkey-normal-mode' disabled without ever entering Insert, with no
+global `donkey-mode' to fall back on its own explicit per-buffer
+reset) relies on exactly this to restore the cursor -- `passive'
+must only suppress the reset for the global post-command-hook poll,
+never for the mode-hook-triggered call."
+  (with-temp-buffer
+    (setq-local cursor-type 'hbar)
+    (donkey--update-cursor)
+    (should-not (local-variable-p 'cursor-type))))
 
 (ert-deftest donkey-mode-check-post-command-non-editing-not-registered-before-enable ()
   "`donkey--check-post-command-non-editing' must not be a permanent,
