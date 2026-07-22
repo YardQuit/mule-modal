@@ -5,7 +5,7 @@
 ;; Maintainer: Michael Jones
 ;; Assisted-by: Lumo 2.0 Max, Claude [Claude Code]
 ;; URL: https://github.com/yardquit/donkey
-;; Version: 1.0.0
+;; Version: 1.0.1
 ;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: convenience
 ;; Homepage: https://github.com/yardquit/donkey
@@ -43,7 +43,7 @@
 ;;; Code:
 
 (require 'thingatpt) ;(donkey-mark-word)
-(require 'cl-lib)    ; Explicitly load cl-lib for cl-some, cl-incf
+(require 'cl-lib)    ; Explicitly load cl-lib for cl-some
 (eval-and-compile
   (declare-function org-open-at-point "org")     ;(donkey-enter-dwim)
   (declare-function org-element-at-point "org")  ;(donkey-enter-dwim)
@@ -256,68 +256,52 @@ documentation."
   :type 'integer
   :group 'donkey)
 
-(defvar donkey--position-ring nil
+(defvar-local donkey--position-ring nil
   "List of markers recording previous cursor positions, most recent first.")
 
-(defvar donkey--position-index 0
+(defvar-local donkey--position-index 0
   "Current rotation offset into `donkey--position-ring'.
 
 0 = most recent entry.  Reset to 0 whenever a new position is
 recorded.")
 
-(defvar donkey--last-tracked-state nil
+(defvar-local donkey--last-tracked-state nil
   "Cons cell (BUFFER . POINT) captured after the previous command.")
 
 (defun donkey--track-position ()
-  "Record previous cursor position when point or buffer change.
+  "Record previous cursor position when point changes.
 
 Runs on `post-command-hook'.  Independent of the mark ring and
 region."
   (unless (minibufferp)
-    (let ((now-buf (current-buffer))
-          (now-pt  (point)))
+    (let ((now-pt (point)))
       (when (and donkey--last-tracked-state
-                 (or (not (eq (car donkey--last-tracked-state) now-buf))
-                     (/= (cdr donkey--last-tracked-state) now-pt)))
+                 (/= (cdr donkey--last-tracked-state) now-pt))
         (let ((m (make-marker)))
-          (set-marker m (cdr donkey--last-tracked-state)
-                      (car donkey--last-tracked-state))
+          (set-marker m (cdr donkey--last-tracked-state))
           (push m donkey--position-ring)
           (when (> (length donkey--position-ring) donkey-position-ring-max)
             (set-marker (car (last donkey--position-ring)) nil)
             (nbutlast donkey--position-ring)))
         (setq donkey--position-index 0))
-      (setq donkey--last-tracked-state (cons now-buf now-pt)))))
+      (setq donkey--last-tracked-state (cons (current-buffer) now-pt)))))
 
 (defun donkey-jump-back ()
   "Rotate to the next stored position in the ring and jump there.
 
-Press repeatedly to cycle through the last `donkey--position-ring-max'
-recorded positions.  Skips markers whose buffer has been killed."
+Press repeatedly to cycle through the last `donkey-position-ring-max'
+recorded positions in this buffer."
   (interactive)
   (if (null donkey--position-ring)
       (user-error "No positions recorded yet")
-    (let ((ring-len (length donkey--position-ring))
-          target skipped)
-      (cl-loop repeat ring-len
-               until target
-               do
-               (setq donkey--position-index (1+ donkey--position-index))
-               (when (>= donkey--position-index ring-len)
-                 (setq donkey--position-index 0))
-               (let* ((m (nth donkey--position-index donkey--position-ring))
-                      (buf (and m (marker-buffer m))))
-                 (if (and buf (> (marker-position m) 0))
-                     (setq target m)
-                   (cl-incf skipped))))
-      (if target
-          (progn
-            (pop-to-buffer (marker-buffer target))
-            (goto-char target)
-            (setq donkey--last-tracked-state (cons (current-buffer) (point)))
-            (message "Position %d/%d"
-                     (1+ donkey--position-index) ring-len))
-        (user-error "No valid positions in ring")))))
+    (let ((ring-len (length donkey--position-ring)))
+      (setq donkey--position-index (1+ donkey--position-index))
+      (when (>= donkey--position-index ring-len)
+        (setq donkey--position-index 0))
+      (goto-char (nth donkey--position-index donkey--position-ring))
+      (setq donkey--last-tracked-state (cons (current-buffer) (point)))
+      (message "Position %d/%d"
+               (1+ donkey--position-index) ring-len))))
 
 (defun donkey-goto-line ()
   "Go to line number."

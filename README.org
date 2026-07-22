@@ -467,24 +467,44 @@ mode keybindings.
 
 * Smartparens Integration
 
-When =smartparens= is loaded, DONKEY automatically:
-- Binds =C-g= in =smartparens-mode-map= and overlay keymaps
+DONKEY always, with no configuration needed:
 - Clears transient smartparens overlays on Insert-to-Normal transition
 - Defers overlay cleanup via idle timer to avoid race conditions
 
-No configuration needed — integration is automatic when both packages
-are loaded. If smartparens is not installed, DONKEY functions normally
-without errors.
+Call =(donkey-setup-smartparens)= in your config after loading
+=smartparens= to additionally bind =C-g= in =smartparens-mode-map= and
+its overlay keymaps. This binding is opt-in and not installed
+automatically. If smartparens is not installed, DONKEY functions
+normally without errors.
+
+#+begin_src emacs-lisp
+
+  (with-eval-after-load 'smartparens
+    (donkey-setup-smartparens))
+
+#+end_src
+
+Or with =use-package=, in =smartparens='s =:config= block, which runs
+at the same point as =with-eval-after-load=:
+
+#+begin_src emacs-lisp
+
+  (use-package smartparens
+    :ensure t
+    :config
+    (donkey-setup-smartparens))
+
+#+end_src
 
 * Position Tracking
 
 =M-x donkey-jump-back= (bound to =S=) rotates through a ring of
-previously recorded cursor positions. Positions are tracked
-automatically via =post-command-hook= whenever the cursor moves to a
-different buffer or position.
+previously recorded cursor positions in the current buffer. Positions
+are tracked automatically via =post-command-hook= whenever the cursor
+moves.
 
 - Ring size controlled by =donkey-position-ring-max= (default: 10)
-- Skips markers whose buffer has been killed
+- Ring is buffer-local — each buffer keeps its own history
 - Independent of the mark ring and region
 
 * Org-Scratch Buffer
