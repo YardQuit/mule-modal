@@ -1088,6 +1088,32 @@ disabling the `C-g' interception fallback for it."
      (donkey--clear-transient-overlays)
      (should (overlay-start ov)))))
 
+(ert-deftest donkey-clear-overlays-removes-tracked-pair-overlay-from-sp-list ()
+  "Strategy 3 removes an overlay tracked in `sp-pair-overlay-list' via
+`sp--remove-overlay' instead of a raw `delete-overlay'.
+
+Regression test: raw `delete-overlay' on an overlay Smartparens still
+has in `sp-pair-overlay-list' leaves a stale, deleted-overlay
+reference there.  `overlay-start'/`overlay-end' on a deleted overlay
+return nil, so the next command then crashed
+`sp--pair-overlay-post-command-handler' (still buffer-locally
+registered, since only `sp--remove-overlay' also unregisters it) with
+\(wrong-type-argument number-or-marker-p nil) -- reproduced live in a
+real `emacs -nw' session."
+  (skip-unless (and (featurep 'smartparens)
+                     (boundp 'sp-pair-overlay-keymap)
+                     (fboundp 'sp--remove-overlay)))
+  (require 'smartparens)
+  (donkey--with-test-buffer
+   (donkey-enter-insert)
+   (let* ((ov (make-overlay (point) (1+ (point))))
+          (sp-pair-overlay-list (list ov)))
+     (overlay-put ov 'keymap sp-pair-overlay-keymap)
+     (should (memq ov sp-pair-overlay-list))
+     (donkey--clear-transient-overlays)
+     (should-not (overlay-start ov))
+     (should-not (memq ov sp-pair-overlay-list)))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; Deferred Cleanup Timer
 ;;; ---------------------------------------------------------------------------

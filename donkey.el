@@ -1578,7 +1578,18 @@ Operates on the current buffer only."
                            (cl-some (lambda (f) (memq f transient-faces)) face)))))
             (delete-overlay ov)
             (setq cleared (1+ cleared))))))
-    ;; Strategy 3: Remove overlays carrying smartparens keymap properties
+    ;; Strategy 3: Remove overlays carrying smartparens keymap properties.
+    ;;
+    ;; For overlays Smartparens is actively tracking in
+    ;; `sp-pair-overlay-list', go through its own `sp--remove-overlay'
+    ;; instead of a raw `delete-overlay': deleting a still-tracked pair
+    ;; overlay out from under Smartparens leaves a stale, deleted-overlay
+    ;; reference sitting in that list.  `overlay-start'/`overlay-end' on
+    ;; a deleted overlay return nil, and the very next command then
+    ;; crashes `sp--pair-overlay-post-command-handler' (still registered
+    ;; as a local `post-command-hook', since only `sp--remove-overlay'
+    ;; also unregisters it) with
+    ;; (wrong-type-argument number-or-marker-p nil).
     (dolist (ov (overlays-in beg end))
       (when (overlay-start ov)
         (let ((km (overlay-get ov 'keymap)))
@@ -1587,7 +1598,11 @@ Operates on the current buffer only."
                               (eq km sp-pair-overlay-keymap))
                          (and (boundp 'sp-overlay-keymap)
                               (eq km sp-overlay-keymap))))
-            (delete-overlay ov)
+            (if (and (boundp 'sp-pair-overlay-list)
+                     (fboundp 'sp--remove-overlay)
+                     (memq ov sp-pair-overlay-list))
+                (sp--remove-overlay ov)
+              (delete-overlay ov))
             (setq cleared (1+ cleared))))))
     cleared))
 
