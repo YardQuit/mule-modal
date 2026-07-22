@@ -141,7 +141,7 @@ and =quelpa-use-package= need to be installed first:
 |-----+------------------+---------------------------------------------|
 | =p= | =donkey-yank=      | Yank from clipboard, replacing region       |
 | =P= | =donkey-yank-pop=  | Replace last yank with next kill-ring entry |
-| =y= | =kill-ring-save= | Copy region to kill ring                    |
+| =y= | =donkey-copy=      | Copy region (or char at point) to kill ring |
 
 ** Motions
 
@@ -167,13 +167,15 @@ and =quelpa-use-package= need to be installed first:
 | =m A= | =donkey-mark-sexp-outer=     | Mark including balanced expression   |
 | =m v= | =donkey-rectangle-mark-mode= | Toggle rectangle mark mode           |
 
-=donkey-mark-inner=/=donkey-mark-outer= support =( [ { < " ' ` = * ~ | \ / : + _ $=
+=donkey-mark-inner=/=donkey-mark-outer= support =( [ { < " ' ` ’ “ ” = * ~ | \ / : + _ $=
 by default -- an alist of (OPEN . CLOSE) pairs in =donkey-mark-pair-delimiters=
-(a Customization Group variable). For symmetric delimiters (e.g. quotes,
-where the same character both opens and closes a pair), OPEN and CLOSE
-are identical. Add or remove entries in your =config.el= to change what's
-recognized, e.g. to add =#= as a language's inline-comment marker and
-remove =~= (freeing that key up for something else):
+(a Customization Group variable). For symmetric delimiters (e.g. straight
+or curly single quotes, where the same character both opens and closes a
+pair), OPEN and CLOSE are identical. Matching is always case-sensitive,
+regardless of the buffer's own =case-fold-search= setting. Add or remove
+entries in your =config.el= to change what's recognized, e.g. to add
+=#= as a language's inline-comment marker and remove =~= (freeing that
+key up for something else):
 
 #+begin_src emacs-lisp
 

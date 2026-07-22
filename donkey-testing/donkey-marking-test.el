@@ -812,6 +812,48 @@ mark-sexp should treat them as one unit."
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "escaped"))))
 
+(ert-deftest donkey-mark-inner-curly-single-quote ()
+  "Marks content inside curly single quotes (U+2019), a default
+delimiter pair, excluding the quotes."
+  (with-temp-buffer
+    (insert (concat (string ?’) "quoted" (string ?’)))
+    (goto-char 1)
+    (donkey-mark-inner)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "quoted"))))
+
+(ert-deftest donkey-mark-inner-curly-double-quote ()
+  "Marks content inside curly double quotes (U+201C/U+201D), a default
+delimiter pair, excluding the quotes."
+  (with-temp-buffer
+    (insert (concat (string ?“) "quoted" (string ?”)))
+    (goto-char 1)
+    (donkey-mark-inner)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "quoted"))))
+
+(ert-deftest donkey-mark-inner-case-sensitive-delimiter ()
+  "Regression test: matching a delimiter pair must be case-sensitive,
+regardless of the buffer's own `case-fold-search' setting.
+
+Without binding `case-fold-search' to nil, `search-forward'/
+`search-backward' fold case by default, so an uppercase delimiter
+like `X' would also match a lowercase `x' -- silently pairing with
+the wrong occurrence.  Confirmed live in `emacs -nw': with `X' added
+as a custom delimiter and point on the opening `X' in
+\"Xfoo x barX\", `donkey-mark-inner' selected \"foo \" (stopping at
+the lowercase `x') instead of \"foo x bar\" (stopping at the real
+uppercase `X') before this fix."
+  (let ((donkey-mark-pair-delimiters
+         (cons (cons ?X ?X) donkey-mark-pair-delimiters))
+        (case-fold-search t))
+    (with-temp-buffer
+      (insert "Xfoo x barX")
+      (goto-char 1)
+      (donkey-mark-inner)
+      (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                     "foo x bar")))))
+
 (ert-deftest donkey-mark-inner-edge-empty ()
   "Empty braces produce no selectable content, raising error."
   (with-temp-buffer
