@@ -979,6 +979,96 @@ delete-region rather than string-rectangle."
       (should entered)
       (should (= (buffer-size) 7)))))
 
+;;; ---------------------------------------------------------------------------
+;;; donkey-wrap-region
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-wrap-region-no-region-falls-through-to-undefined ()
+  "With no active region, delegates to `undefined' and does nothing else."
+  (let (undefined-called insert-mode-called self-insert-called)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
+                ((symbol-function 'undefined)
+                 (lambda () (interactive) (setq undefined-called t)))
+                ((symbol-function 'donkey-insert-mode)
+                 (lambda (&rest _) (setq insert-mode-called t)))
+                ((symbol-function 'self-insert-command)
+                 (lambda (&rest _) (setq self-insert-called t))))
+        (donkey-wrap-region))
+      (should undefined-called)
+      (should-not insert-mode-called)
+      (should-not self-insert-called))))
+
+(ert-deftest donkey-wrap-region-with-region-enters-insert-inserts-then-exits ()
+  "With an active region, enters Insert, self-inserts, then exits back
+to Normal, in that order."
+  (let (calls)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+                ((symbol-function 'donkey-insert-mode)
+                 (lambda (&rest _) (push 'insert-mode calls)))
+                ((symbol-function 'self-insert-command)
+                 (lambda (&rest _) (push 'self-insert calls)))
+                ((symbol-function 'donkey--exit-insert)
+                 (lambda () (push 'exit-insert calls))))
+        (donkey-wrap-region))
+      (should (equal (nreverse calls) '(insert-mode self-insert exit-insert))))))
+
+(ert-deftest donkey-wrap-region-does-not-deactivate-mark-itself ()
+  "Does not call `deactivate-mark' before self-inserting -- the region
+must stay active for packages hooking `self-insert-command' (such as
+Smartparens' region-wrap) to see it."
+  (let (deactivated)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+                ((symbol-function 'donkey-insert-mode) (lambda (&rest _) nil))
+                ((symbol-function 'self-insert-command) (lambda (&rest _) nil))
+                ((symbol-function 'donkey--exit-insert) (lambda () nil))
+                ((symbol-function 'deactivate-mark)
+                 (lambda () (setq deactivated t))))
+        (donkey-wrap-region))
+      (should-not deactivated))))
+
+(ert-deftest donkey-wrap-region-with-real-region-inserts-character-at-point ()
+  "End-to-end with a real (non-mocked) self-insert-command: the pressed
+character lands in the buffer at point, same as ordinary self-insert."
+  (with-temp-buffer
+    (let ((transient-mark-mode t))
+      (insert "hello world")
+      (goto-char 1)
+      (push-mark (point) t t)
+      (goto-char 6)
+      (let ((last-command-event ?\())
+        (donkey-wrap-region))
+      (should (string= (buffer-string) "hello( world")))))
+
+(ert-deftest donkey-wrap-region-returns-to-normal-state ()
+  "After wrapping, DONKEY ends up back in Normal state, not stuck in Insert."
+  (with-temp-buffer
+    (donkey-normal-mode 1)
+    (let ((transient-mark-mode t))
+      (insert "hello")
+      (goto-char 1)
+      (push-mark (point) t t)
+      (goto-char 3)
+      (let ((last-command-event ?\())
+        (donkey-wrap-region))
+      (should (bound-and-true-p donkey-normal-mode))
+      (should-not (bound-and-true-p donkey-insert-mode)))))
+
+(ert-deftest donkey-wrap-region-bound-for-each-default-delimiter ()
+  "Each default `donkey-wrap-delimiters' character is bound in Normal
+state to `donkey-wrap-region'."
+  (dolist (ch donkey-wrap-delimiters)
+    (should (eq (lookup-key donkey-normal-mode-map (char-to-string ch))
+                #'donkey-wrap-region))))
+
 (provide 'donkey-insert-mode-entry-test)
 
 ;;; donkey-insert-mode-entry-test.el ends here

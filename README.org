@@ -59,6 +59,7 @@ add the following to your =init.el= or =config.el=:
 | =K= | =donkey-visual-previous-line= | Move up, extending visual selection   |
 | =V= | =donkey-visual-line-toggle=   | Toggle visual line selection          |
 | =v= | =set-mark-command=          | Toggle mark                           |
+| =(= =[= ={= ="= ='= | =donkey-wrap-region= | Wrap active region with delimiter, see below |
 
 ** Insert Mode Entry
 
@@ -496,6 +497,28 @@ at the same point as =with-eval-after-load=:
 
 #+end_src
 
+** Wrapping a Selection with a Delimiter
+
+Select a region (=v=/=V=), then press one of =(=, =[=, ={=, ="=, ='=
+while still in Normal state to wrap it — e.g. selecting =word= and
+pressing =(= yields =(word)= when Smartparens is loaded. This works
+without leaving Normal state stuck in Insert afterward.
+
+Under the hood, =donkey-normal-mode-map= normally suppresses every
+printable key so it can't accidentally self-insert. These delimiters
+are the one exception, and only while a region is active:
+`donkey-wrap-region` momentarily enters Insert state *without*
+clearing the selection first (unlike =i=/=a= and the other Insert
+Mode Entry commands), runs the ordinary character insertion so
+Smartparens' own region-wrap logic can see the still-active region,
+then returns to Normal state automatically. With no region active,
+the key does nothing, same as any other suppressed key in Normal
+state.
+
+The delimiter set is =donkey-wrap-delimiters= (a Customization Group
+variable); change it before =donkey.el= loads to add or remove
+characters.
+
 * Position Tracking
 
 =M-x donkey-jump-back= (bound to =S=) rotates through a ring of
@@ -542,4 +565,5 @@ All DONKEY variables are under the =donkey= Customize group:
 | =donkey-default-enter-rules-enabled= | boolean | =t=                | Install default Enter DWIM rules       |
 | =donkey-position-ring-max=           | integer | =10=               | Number of positions in jump-back ring  |
 | =donkey-decscusr-denied-terminals=  | list    | =("dumb" "linux")= | Terminals where DECSCUSR is suppressed |
+| =donkey-wrap-delimiters=             | list    | =( [ { " '=        | Delimiters that wrap an active region  |
 
