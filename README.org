@@ -58,21 +58,6 @@ Clone the repository into =donkey/= inside your
 
 #+end_src
 
-** use-package with =:vc= (Emacs 30+)
-
-Emacs 30's =use-package= has a built-in =:vc= keyword (backed by
-=package-vc.el=, available since Emacs 29) that clones and
-byte-compiles directly from a Git URL — no MELPA needed:
-
-#+begin_src emacs-lisp
-
-  (use-package donkey
-    :vc (:url "https://github.com/yardquit/donkey" :rev :newest)
-    :config
-    (donkey-mode 1))
-
-#+end_src
-
 ** use-package with =straight.el=
 
 #+begin_src emacs-lisp
