@@ -289,55 +289,6 @@ at point-min since forward-line -1 there has nowhere to go."
       (donkey-jump-back)
       (should (= (point) 1)))))
 
-(ert-deftest donkey-jump-back-skips-killed-buffer-marker ()
-  "Markers in killed buffers are skipped."
-  (with-temp-buffer
-    (insert "main\n")
-    (let ((buf-a (generate-new-buffer "*test-killed-jump*"))
-          (donkey--position-ring nil)
-          (donkey--position-index 0)
-          (donkey--last-tracked-state nil)
-          (donkey-position-ring-max 10))
-      (goto-char 1)
-      (donkey--track-position)
-      (set-buffer buf-a)
-      (insert "killed\n")
-      (goto-char 5)
-      (donkey--track-position)
-      (kill-buffer buf-a)
-      (set-buffer (current-buffer))
-      (goto-char 3)
-      (donkey--track-position)
-      (should (= (length donkey--position-ring) 2))
-      (donkey-jump-back)
-      (should (= (point) 1)))))
-
-(ert-deftest donkey-jump-back-all-invalid-user-error ()
-  "When all markers point to killed buffers, jumping signals an error."
-  (let ((buf-a (generate-new-buffer "*test-jump-a*"))
-        (buf-b (generate-new-buffer "*test-jump-b*")))
-    (unwind-protect
-        (progn
-          (set-buffer buf-a)
-          (insert "a\n")
-          (goto-char 1)
-          (let ((donkey--position-ring nil)
-                (donkey--position-index 0)
-                (donkey--last-tracked-state nil)
-                (donkey-position-ring-max 10))
-            (donkey--track-position)
-            (set-buffer buf-b)
-            (insert "b\n")
-            (goto-char 1)
-            (donkey--track-position)
-            (kill-buffer buf-a)
-            (kill-buffer buf-b)
-            (with-temp-buffer
-              (insert "temp\n")
-              (should-error (donkey-jump-back)))))
-      (dolist (b (list buf-a buf-b))
-        (when (buffer-live-p b) (kill-buffer b))))))
-
 (ert-deftest donkey-jump-back-updates-tracking-state ()
   "After jumping, tracking state is updated to new position."
   (with-temp-buffer
@@ -388,6 +339,76 @@ at point-min since forward-line -1 there has nowhere to go."
           (donkey-jump-back))
         (should msg)
         (should (string-match "Position 1/1" msg))))))
+
+(ert-deftest donkey-position-ring-is-buffer-local ()
+  "Each buffer accumulates its own position ring, independent of others."
+  (let ((buf-a (generate-new-buffer "*test-buffer-local-a*"))
+        (buf-b (generate-new-buffer "*test-buffer-local-b*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buf-a
+            (insert "aaaa\n")
+            (goto-char 1)
+            (donkey--track-position)
+            (goto-char 3)
+            (donkey--track-position))
+          (with-current-buffer buf-b
+            (insert "bbbb\n")
+            (goto-char 1)
+            (donkey--track-position)
+            (goto-char 4)
+            (donkey--track-position)
+            (goto-char 2)
+            (donkey--track-position))
+          (should (= (length (buffer-local-value 'donkey--position-ring buf-a)) 1))
+          (should (= (length (buffer-local-value 'donkey--position-ring buf-b)) 2)))
+      (dolist (b (list buf-a buf-b))
+        (when (buffer-live-p b) (kill-buffer b))))))
+
+(ert-deftest donkey-jump-back-stays-within-current-buffer ()
+  "Jumping back in one buffer never visits a position recorded in another."
+  (let ((buf-a (generate-new-buffer "*test-jump-local-a*"))
+        (buf-b (generate-new-buffer "*test-jump-local-b*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buf-a
+            (insert "aaaa\n")
+            (goto-char 1)
+            (donkey--track-position)
+            (goto-char 3)
+            (donkey--track-position))
+          (with-current-buffer buf-b
+            (insert "bbbb\n")
+            (goto-char 1)
+            (donkey--track-position)
+            (goto-char 4)
+            (donkey--track-position))
+          (with-current-buffer buf-a
+            (donkey-jump-back)
+            (should (eq (current-buffer) buf-a))
+            (should (= (point) 1)))
+          (with-current-buffer buf-b
+            (donkey-jump-back)
+            (should (eq (current-buffer) buf-b))
+            (should (= (point) 1))))
+      (dolist (b (list buf-a buf-b))
+        (when (buffer-live-p b) (kill-buffer b))))))
+
+(ert-deftest donkey-jump-back-empty-in-fresh-buffer-with-other-buffer-history ()
+  "A fresh buffer has no recorded positions even when another buffer does."
+  (let ((buf-a (generate-new-buffer "*test-jump-fresh-a*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buf-a
+            (insert "aaaa\n")
+            (goto-char 1)
+            (donkey--track-position)
+            (goto-char 3)
+            (donkey--track-position))
+          (with-temp-buffer
+            (should (null donkey--position-ring))
+            (should-error (donkey-jump-back) :type 'user-error)))
+      (when (buffer-live-p buf-a) (kill-buffer buf-a)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-switch-other-buffer
