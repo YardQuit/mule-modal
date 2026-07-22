@@ -896,6 +896,27 @@ Removes the active region first if one is present."
   (donkey--delete-active-region-safe)
   (yank-pop))
 
+(defun donkey-copy ()
+  "Copy the active region, or the character at point if no region is active.
+
+With `rectangle-mark-mode' active, copies the rectangle instead of a
+linear region.
+
+`kill-ring-save' (Emacs's own copy command) isn't used directly here:
+its interactive spec reads `region-beginning'/`region-end', which use
+whatever position the mark last happened to be at, regardless of
+whether the region is actually ACTIVE -- a mark left over from an
+earlier, unrelated command (e.g. a stale `donkey-mark-inner'
+selection) would silently get copied instead of the single character
+at point."
+  (interactive)
+  (if (use-region-p)
+      (if (bound-and-true-p rectangle-mark-mode)
+          (call-interactively #'copy-rectangle-as-kill)
+        (kill-ring-save (region-beginning) (region-end)))
+    (kill-ring-save (point) (min (point-max) (1+ (point)))))
+  (deactivate-mark))
+
 (defun donkey-delete ()
   "Delete character or region."
   (interactive)
@@ -1020,7 +1041,7 @@ line instead of extending \"hello\" by one line."
 
 (defcustom donkey-mark-pair-delimiters
   '((?\{ . ?\}) (?\[ . ?\]) (?\( . ?\)) (?\< . ?>)
-    (?\" . ?\") (?\' . ?\') (?\` . ?\`)
+    (?\" . ?\") (?\' . ?\') (?\` . ?\`) (?’ . ?’) (?“ . ?”)
     (?= . ?=) (?* . ?*) (?~ . ?~) (?\| . ?\|) (?\\ . ?\\)
     (?/ . ?/) (?: . ?:) (?+ . ?+) (?_ . ?_) (?$ . ?$))
   "Alist of (OPEN . CLOSE) delimiter characters for `donkey-mark-inner'
@@ -1084,8 +1105,13 @@ recognized-opener set, so point being ON-OPENER there always
 genuinely means the opening delimiter.
 
 START-POS is the position of the opening delimiter; END-POS is the
-position immediately after the closing delimiter."
-  (let (start-pos end-pos)
+position immediately after the closing delimiter.
+
+Searches are always case-sensitive (`case-fold-search' bound to nil),
+regardless of the buffer's own `case-fold-search' setting -- otherwise
+a delimiter like an uppercase `X' would also match a lowercase `x' in
+the buffer, silently pairing with the wrong occurrence."
+  (let (start-pos end-pos (case-fold-search nil))
     (if on-opener
         (progn
           (setq start-pos (point))
@@ -1277,7 +1303,7 @@ Trailing commas or periods are omitted from the selection."
 ;; Yank/Paste
 (keymap-set donkey-normal-mode-map "P" #'donkey-yank-pop)
 (keymap-set donkey-normal-mode-map "p" #'donkey-yank)
-(keymap-set donkey-normal-mode-map "y" #'kill-ring-save)
+(keymap-set donkey-normal-mode-map "y" #'donkey-copy)
 
 ;; Motions
 (keymap-set donkey-normal-mode-map "B" #'backward-sexp)

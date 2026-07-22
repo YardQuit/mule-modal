@@ -7,6 +7,129 @@
 (defvar rectangle-mark-mode)
 
 ;;; ---------------------------------------------------------------------------
+;;; donkey-copy
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-copy-no-region-copies-single-char ()
+  "Without an active region, copies the character at point via
+kill-ring-save with an explicit (point . point+1) range."
+  (let (copied-bounds)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 3)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
+                ((symbol-function 'kill-ring-save)
+                 (lambda (beg end) (setq copied-bounds (list beg end))))
+                ((symbol-function 'deactivate-mark) (lambda () nil)))
+        (donkey-copy))
+      (should (equal copied-bounds '(3 4))))))
+
+(ert-deftest donkey-copy-no-region-does-not-use-stale-mark ()
+  "Regression test: without an ACTIVE region, donkey-copy must copy
+only the character at point, never the raw mark position.
+
+kill-ring-save's own interactive spec reads region-beginning/
+region-end, which use wherever the mark last happened to be
+regardless of whether the region is actually active -- a mark left
+over from an earlier, unrelated command (e.g. a stale
+donkey-mark-inner selection, or any prior push-mark) would silently
+get copied instead of the single character at point.  Confirmed live
+in emacs -nw: with mark left at position 10 and point moved to
+position 20 (region inactive), a real 'y' keypress copied
+\"jklmnopqrs\" (mark to point) instead of the single character under
+the cursor."
+  (let (copied-bounds)
+    (with-temp-buffer
+      (insert "abcdefghijklmnopqrstuvwxyz")
+      (goto-char 1)
+      (push-mark 10 nil t)
+      (deactivate-mark)
+      (goto-char 20)
+      (cl-letf (((symbol-function 'kill-ring-save)
+                 (lambda (beg end) (setq copied-bounds (list beg end)))))
+        (donkey-copy))
+      (should (equal copied-bounds '(20 21))))))
+
+(ert-deftest donkey-copy-no-region-at-end-of-buffer-no-error ()
+  "At point-max with no region, there is nothing to copy but this must
+not error -- the range clamps to an empty span instead of extending
+past the end of the buffer."
+  (let (copied-bounds)
+    (with-temp-buffer
+      (insert "hello")
+      (goto-char (point-max))
+      (cl-letf (((symbol-function 'kill-ring-save)
+                 (lambda (beg end) (setq copied-bounds (list beg end)))))
+        (donkey-copy))
+      (should (equal copied-bounds (list (point-max) (point-max)))))))
+
+(ert-deftest donkey-copy-region-copies-region ()
+  "With an active region (not rectangle), copies from region-beginning
+to region-end."
+  (let (copied-bounds)
+    (with-temp-buffer
+      (insert "hello world\n")
+      (goto-char 6)
+      (push-mark 1)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+                ((symbol-function 'kill-ring-save)
+                 (lambda (beg end) (setq copied-bounds (list beg end))))
+                ((symbol-function 'deactivate-mark) (lambda () nil)))
+        (let ((rectangle-mark-mode nil))
+          (donkey-copy)))
+      (should (equal copied-bounds '(1 6))))))
+
+(ert-deftest donkey-copy-region-deactivates-mark ()
+  "After copying a region, the mark is deactivated -- the selection
+does not linger once yanked."
+  (let (deactivated)
+    (with-temp-buffer
+      (insert "hello world\n")
+      (goto-char 6)
+      (push-mark 1)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+                ((symbol-function 'kill-ring-save) (lambda (beg end) nil))
+                ((symbol-function 'deactivate-mark)
+                 (lambda () (setq deactivated t))))
+        (let ((rectangle-mark-mode nil))
+          (donkey-copy)))
+      (should deactivated))))
+
+(ert-deftest donkey-copy-rectangle-mode-calls-copy-rectangle-as-kill ()
+  "With region active and rectangle-mark-mode enabled, delegates to
+copy-rectangle-as-kill via call-interactively."
+  (let (called-cmd)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (push-mark 3)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+                ((symbol-function 'call-interactively)
+                 (lambda (cmd) (setq called-cmd cmd)))
+                ((symbol-function 'deactivate-mark) (lambda () nil)))
+        (let ((rectangle-mark-mode t))
+          (donkey-copy))))
+    (should (eq called-cmd 'copy-rectangle-as-kill))))
+
+(ert-deftest donkey-copy-rectangle-mode-falls-back-when-disabled ()
+  "When rectangle-mark-mode is nil, falls back to plain kill-ring-save."
+  (let (copy-called ci-called)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (push-mark 3)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+                ((symbol-function 'kill-ring-save)
+                 (lambda (beg end) (setq copy-called t)))
+                ((symbol-function 'call-interactively)
+                 (lambda (cmd) (setq ci-called t)))
+                ((symbol-function 'deactivate-mark) (lambda () nil)))
+        (let ((rectangle-mark-mode nil))
+          (donkey-copy))))
+    (should copy-called)
+    (should-not ci-called)))
+
+;;; ---------------------------------------------------------------------------
 ;;; donkey-delete
 ;;; ---------------------------------------------------------------------------
 
