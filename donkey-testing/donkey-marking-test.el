@@ -844,6 +844,82 @@ mark-sexp should treat them as one unit."
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "line1\nline2"))))
 
+(ert-deftest donkey-mark-inner-symmetric-delimiter-at-point-always-tries-forward-first ()
+  "Design contract: point on any occurrence of a symmetric delimiter
+(open-char equals close-char, e.g. a quote) is always assumed to be an
+OPENING delimiter first, searching forward -- exactly as if the user
+had just typed it there.  This holds even when the forward match
+belongs to a different, unrelated pair rather than the one enclosing
+point: with point on the closing quote of \"hello\" in
+`foo \"hello\" bar \"unrelated\" baz', the forward search finds
+\"unrelated\"'s opening quote and accepts it, selecting \" bar \"
+rather than \"hello\".  The backward-search fallback (see
+`donkey-mark-inner-symmetric-delimiter-falls-back-when-no-forward-match')
+only applies when the forward search finds nothing at all."
+  (with-temp-buffer
+    (insert "foo \"hello\" bar \"unrelated\" baz")
+    (goto-char 1)
+    (search-forward "hello")
+    (should (eq (char-after) ?\"))
+    (donkey-mark-inner)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   " bar "))))
+
+(ert-deftest donkey-mark-inner-symmetric-delimiter-falls-back-when-no-forward-match ()
+  "When the forward search for a symmetric delimiter's close finds
+nothing at all, falls back to searching backward instead of erroring
+-- treating point as the pair's CLOSING occurrence and finding its
+matching opener.  With only one quote pair in the buffer and point on
+its closing quote, there is nothing left to match searching forward,
+so this must fall back rather than fail."
+  (with-temp-buffer
+    (insert "foo \"hello\" bar")
+    (goto-char 1)
+    (search-forward "hello")
+    (should (eq (char-after) ?\"))
+    (donkey-mark-inner)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "hello"))))
+
+(ert-deftest donkey-mark-inner-symmetric-delimiter-three-in-a-row-middle-pairs-forward ()
+  "With three occurrences of the same symmetric delimiter and point on
+the middle one, forward search succeeds (finds the third), so it
+pairs with the third rather than falling back to the first."
+  (with-temp-buffer
+    (insert "a/bee/cee/d")
+    (goto-char 1)
+    (search-forward "bee")
+    (should (eq (char-after) ?/))
+    (donkey-mark-inner)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "cee"))))
+
+(ert-deftest donkey-mark-inner-symmetric-delimiter-three-in-a-row-last-falls-back ()
+  "With three occurrences of the same symmetric delimiter and point on
+the last one, forward search finds nothing, so it falls back to
+pairing with the middle occurrence."
+  (with-temp-buffer
+    (insert "a/bee/cee/d")
+    (goto-char 1)
+    (search-forward "cee")
+    (should (eq (char-after) ?/))
+    (donkey-mark-inner)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "cee"))))
+
+(ert-deftest donkey-mark-inner-asymmetric-delimiter-unclosed-does-not-fall-back ()
+  "Asymmetric delimiters (open-char distinct from close-char, e.g. `('
+and `)') never get the backward-search fallback: point on an opening
+delimiter with no closing match ahead is an unclosed pair, plain and
+simple, not an ambiguous opener/closer situation -- searching backward
+for another `(' would not find a `)' anyway, so it stays an error."
+  (with-temp-buffer
+    (insert "foo (bar unclosed")
+    (goto-char 1)
+    (search-forward "(")
+    (backward-char 1)
+    (should-error (donkey-mark-inner) :type 'error)))
+
 (ert-deftest donkey-mark-inner-edge-has-mark ()
   "Mark is set after command."
   (with-temp-buffer
@@ -867,6 +943,52 @@ mark-sexp should treat them as one unit."
     (goto-char 1)
     (cl-letf (((symbol-function 'read-char) (lambda (&rest _) ?!)))
       (should-error (donkey-mark-inner) :type 'error))))
+
+;;; ---------------------------------------------------------------------------
+;;; donkey-mark-pair-delimiters (customization)
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-mark-pair-delimiters-customization-adds-new-pair ()
+  "Adding a pair to `donkey-mark-pair-delimiters' makes it recognized
+without prompting via `read-char'."
+  (let ((donkey-mark-pair-delimiters
+         (cons (cons ?# ?#) donkey-mark-pair-delimiters)))
+    (with-temp-buffer
+      (insert "#comment#")
+      (goto-char 1)
+      (donkey-mark-inner)
+      (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                     "comment")))))
+
+(ert-deftest donkey-mark-pair-delimiters-customization-removes-pair ()
+  "Removing a pair from `donkey-mark-pair-delimiters' makes it fall
+through to the `read-char' prompt instead of being auto-recognized."
+  (let* ((donkey-mark-pair-delimiters
+          (assq-delete-all ?~ (copy-alist donkey-mark-pair-delimiters)))
+         (prompted nil))
+    (with-temp-buffer
+      (insert "~bold~")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'read-char)
+                 (lambda (&rest _) (setq prompted t) ?~)))
+        (should-error (donkey-mark-inner) :type 'error))
+      (should prompted))))
+
+(ert-deftest donkey-mark-pair-delimiters-prompt-reflects-customization ()
+  "The `read-char' prompt string is built from the current value of
+`donkey-mark-pair-delimiters', so it stays in sync with customization."
+  (let ((donkey-mark-pair-delimiters '((?# . ?#))))
+    (should (equal (donkey--mark-pair-prompt) "Char (#): "))))
+
+(ert-deftest donkey-mark-pair-delimiters-unsupported-error-reflects-customization ()
+  "The \"unsupported delimiter\" error message lists the characters
+from the current value of `donkey-mark-pair-delimiters'."
+  (let ((donkey-mark-pair-delimiters '((?# . ?#))))
+    (should-error (donkey--mark-pair-unsupported-error ?!) :type 'error)
+    (condition-case err
+        (donkey--mark-pair-unsupported-error ?!)
+      (error
+       (should (string-match-p "Use: #" (error-message-string err)))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-mark-outer
@@ -1058,6 +1180,31 @@ mark-sexp should treat them as one unit."
     (donkey-mark-outer)
     (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
                    "{line1\nline2}"))))
+
+(ert-deftest donkey-mark-outer-symmetric-delimiter-at-point-always-tries-forward-first ()
+  "Design contract: forward search wins when it finds anything, even a
+different, unrelated pair.  See
+`donkey-mark-inner-symmetric-delimiter-at-point-always-tries-forward-first'."
+  (with-temp-buffer
+    (insert "foo \"hello\" bar \"unrelated\" baz")
+    (goto-char 1)
+    (search-forward "hello")
+    (should (eq (char-after) ?\"))
+    (donkey-mark-outer)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "\" bar \""))))
+
+(ert-deftest donkey-mark-outer-symmetric-delimiter-falls-back-when-no-forward-match ()
+  "Falls back to a backward search when nothing is found forward.  See
+`donkey-mark-inner-symmetric-delimiter-falls-back-when-no-forward-match'."
+  (with-temp-buffer
+    (insert "foo \"hello\" bar")
+    (goto-char 1)
+    (search-forward "hello")
+    (should (eq (char-after) ?\"))
+    (donkey-mark-outer)
+    (should (equal (buffer-substring-no-properties (region-beginning) (region-end))
+                   "\"hello\""))))
 
 (ert-deftest donkey-mark-outer-edge-has-mark ()
   "Mark is set after command."
