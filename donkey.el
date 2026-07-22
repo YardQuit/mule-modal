@@ -411,14 +411,20 @@ it before loading, or re-run the `dolist' near
   "Insert the pressed delimiter into the active region without deselecting.
 
 Bound to each of `donkey-wrap-delimiters' in Normal state.  With
-no active region, falls through to `undefined', same as any other
-suppressed key.  With an active region, enters Insert state
-without deactivating the mark, inserts the pressed character via
-`self-insert-command' -- letting packages that hook it, such as
-Smartparens' region-wrap, act on the still-active region -- then
-returns to Normal state."
+no active region, or with `rectangle-mark-mode' active, falls
+through to `undefined', same as any other suppressed key.
+`self-insert-command' operates on `region-beginning'/`region-end'
+as a single linear span; against a rectangle selection that
+inserts the delimiters at the rectangle's linear start/end
+positions instead of on each covered line, corrupting the buffer
+rather than wrapping anything meaningful.  With an ordinary
+active region, enters Insert state without deactivating the mark,
+inserts the pressed character via `self-insert-command' -- letting
+packages that hook it, such as Smartparens' region-wrap, act on
+the still-active region -- then returns to Normal state."
   (interactive)
-  (if (not (use-region-p))
+  (if (or (not (use-region-p))
+          (bound-and-true-p rectangle-mark-mode))
       (call-interactively #'undefined)
     (donkey-insert-mode 1)
     (self-insert-command 1)
