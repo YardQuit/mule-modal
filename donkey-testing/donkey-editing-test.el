@@ -407,6 +407,57 @@ kill-ring entry instead of pushing a new one)."
     (should-not donkey--last-kill-rectangle-p)))
 
 ;;; ---------------------------------------------------------------------------
+;;; donkey--replace-rectangle-selection-with-killed-rectangle
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-rectangle-top-left-returns-first-row-start ()
+  "Returns the buffer position of the rectangle's top-left corner,
+regardless of which diagonal corners point/mark actually sit at."
+  (with-temp-buffer
+    (insert "aaXXbb\nccXXdd\neeXXff\n")
+    (goto-char (point-min))
+    (forward-char 2)
+    (let ((start (point)))
+      (goto-char (point-min))
+      (forward-line 2)
+      (forward-char 4)
+      (should (= (donkey--rectangle-top-left start (point)) start)))))
+
+(ert-deftest donkey-replace-rectangle-selection-replaces-matching-rows ()
+  "Integration test: replaces a same-row-count rectangle selection with
+`killed-rectangle', using `delete-rectangle' (not `kill-rectangle') so
+the source content survives the destination's own deletion."
+  (with-temp-buffer
+    (insert ";;aaa\n;;bbb\n;;ccc\n,,ddd\n,,eee\n,,fff\n")
+    (goto-char (point-min))
+    (forward-line 3)
+    (rectangle-mark-mode 1)
+    (forward-line 2)
+    (forward-char 2)
+    (let ((killed-rectangle '(";;" ";;" ";;")))
+      (donkey--replace-rectangle-selection-with-killed-rectangle)
+      (should (string= (buffer-string)
+                       ";;aaa\n;;bbb\n;;ccc\n;;ddd\n;;eee\n;;fff\n"))
+      ;; Source rectangle must survive the destination's own deletion.
+      (should (equal killed-rectangle '(";;" ";;" ";;"))))))
+
+(ert-deftest donkey-replace-rectangle-selection-refuses-row-count-mismatch ()
+  "Refuses via `user-error', without touching the buffer at all, when
+the selection's row count doesn't match `killed-rectangle's row count."
+  (with-temp-buffer
+    (insert ";;aaa\n;;bbb\n;;ccc\n,,ddd\n,,eee\n,,fff\n")
+    (goto-char (point-min))
+    (forward-line 3)
+    (rectangle-mark-mode 1)
+    (forward-line 1)                   ; only 2 rows selected, not 3
+    (forward-char 2)
+    (let ((killed-rectangle '(";;" ";;" ";;")) ; 3 rows
+          (original (buffer-string)))
+      (should-error (donkey--replace-rectangle-selection-with-killed-rectangle)
+                    :type 'user-error)
+      (should (string= (buffer-string) original)))))
+
+;;; ---------------------------------------------------------------------------
 ;;; donkey-yank
 ;;; ---------------------------------------------------------------------------
 
@@ -550,8 +601,13 @@ deletion deactivates the mark, which auto-disables
 `rectangle-mark-mode' via its own hook -- so a plain linear yank
 immediately after would land on only one row, silently leaving every
 other row of the just-deleted rectangle with nothing to replace it.
-Must call `undefined' instead, same as `donkey-wrap-region' does."
-  (let (called-cmd deleted yanked)
+Must call `undefined' instead, same as `donkey-wrap-region' does.
+
+Explicitly binds `donkey--last-kill-rectangle-p' to nil: with it set,
+`donkey-yank' instead delegates to
+`donkey--replace-rectangle-selection-with-killed-rectangle' -- see the
+dedicated tests for that path."
+  (let (called-cmd deleted yanked donkey--last-kill-rectangle-p)
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
@@ -571,7 +627,7 @@ Must call `undefined' instead, same as `donkey-wrap-region' does."
 
 (ert-deftest donkey-yank-rectangle-mode-falls-back-when-disabled ()
   "When rectangle-mark-mode is nil, yanks normally as before."
-  (let (called-cmd deleted yanked)
+  (let (called-cmd deleted yanked donkey--last-kill-rectangle-p)
     (with-temp-buffer
       (insert "hello\n")
       (goto-char 1)
@@ -588,6 +644,26 @@ Must call `undefined' instead, same as `donkey-wrap-region' does."
     (should-not called-cmd)
     (should deleted)
     (should yanked)))
+
+(ert-deftest donkey-yank-rectangle-mode-with-flag-calls-replace-function ()
+  "With rectangle-mark-mode active and the flag set, must delegate to
+`donkey--replace-rectangle-selection-with-killed-rectangle' instead of
+falling through to `undefined'."
+  (let ((donkey--last-kill-rectangle-p t)
+        replace-called called-cmd)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (push-mark 3)
+      (cl-letf (((symbol-function
+                  'donkey--replace-rectangle-selection-with-killed-rectangle)
+                 (lambda () (setq replace-called t)))
+                ((symbol-function 'call-interactively)
+                 (lambda (cmd) (setq called-cmd cmd))))
+        (let ((rectangle-mark-mode t))
+          (donkey-yank))))
+    (should replace-called)
+    (should-not called-cmd)))
 
 (ert-deftest donkey-yank-pastes-rectangle-when-flag-set ()
   "Regression test: after `donkey-copy'/`donkey-delete' kill a rectangle
