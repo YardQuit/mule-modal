@@ -111,6 +111,22 @@ copy-rectangle-as-kill via call-interactively."
           (donkey-copy))))
     (should (eq called-cmd 'copy-rectangle-as-kill))))
 
+(ert-deftest donkey-copy-rectangle-mode-sets-last-kill-rectangle-flag ()
+  "Regression test: copying a rectangle must set
+`donkey--last-kill-rectangle-p' to t, so `donkey-yank' later knows to
+paste it back via `yank-rectangle' instead of the clipboard/kill ring."
+  (let (donkey--last-kill-rectangle-p)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (push-mark 3)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+                ((symbol-function 'call-interactively) (lambda (_cmd) nil))
+                ((symbol-function 'deactivate-mark) (lambda () nil)))
+        (let ((rectangle-mark-mode t))
+          (donkey-copy))))
+    (should donkey--last-kill-rectangle-p)))
+
 (ert-deftest donkey-copy-rectangle-mode-falls-back-when-disabled ()
   "When rectangle-mark-mode is nil, falls back to plain kill-ring-save."
   (let (copy-called ci-called)
@@ -278,6 +294,21 @@ copy-rectangle-as-kill via call-interactively."
           (donkey-delete))))
     (should (eq called-cmd 'kill-rectangle))))
 
+(ert-deftest donkey-delete-rectangle-mode-sets-last-kill-rectangle-flag ()
+  "Regression test: killing a rectangle must set
+`donkey--last-kill-rectangle-p' to t -- see the analogous donkey-copy
+test for why."
+  (let (donkey--last-kill-rectangle-p)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (push-mark 3)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+                ((symbol-function 'call-interactively) (lambda (_cmd) nil)))
+        (let ((rectangle-mark-mode t))
+          (donkey-delete))))
+    (should donkey--last-kill-rectangle-p)))
+
 (ert-deftest donkey-delete-rectangle-mode-falls-back-when-disabled ()
   "When rectangle-mark-mode is nil, falls back to kill-region."
   (let (kill-called ci-called)
@@ -340,6 +371,40 @@ copy-rectangle-as-kill via call-interactively."
       (let ((rectangle-mark-mode nil))
         (call-interactively #'donkey-delete)))
     (should (= (buffer-size) 7))))
+
+;;; ---------------------------------------------------------------------------
+;;; donkey--last-kill-rectangle-p / kill-new / kill-append advice
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest donkey-clear-last-kill-rectangle-flag-sets-nil ()
+  "Directly clears the flag regardless of prior value."
+  (let ((donkey--last-kill-rectangle-p t))
+    (donkey--clear-last-kill-rectangle-flag)
+    (should-not donkey--last-kill-rectangle-p)))
+
+(ert-deftest donkey-kill-new-advice-clears-last-kill-rectangle-flag ()
+  "Regression test: `kill-new' -- the function ANY kill-ring push funnels
+through, including ones with no Donkey wrapper at all (e.g. `kill-line'
+bound directly to \"D\", or any stock kill command reached via Insert
+state's passthrough) -- must clear a stale rectangle-freshness flag, so
+a later `donkey-yank' doesn't paste an old rectangle copy instead of
+the more recent, ordinary kill."
+  (let ((donkey--last-kill-rectangle-p t)
+        (kill-ring nil)
+        (kill-ring-yank-pointer nil))
+    (kill-new "some text")
+    (should-not donkey--last-kill-rectangle-p)))
+
+(ert-deftest donkey-kill-append-advice-clears-last-kill-rectangle-flag ()
+  "Same as `donkey-kill-new-advice-clears-last-kill-rectangle-flag', for
+`kill-append' (used when consecutive kill commands append to the same
+kill-ring entry instead of pushing a new one)."
+  (let ((donkey--last-kill-rectangle-p t)
+        (kill-ring '("existing"))
+        (kill-ring-yank-pointer nil))
+    (setq kill-ring-yank-pointer kill-ring)
+    (kill-append " more" nil)
+    (should-not donkey--last-kill-rectangle-p)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-yank
@@ -523,6 +588,65 @@ Must call `undefined' instead, same as `donkey-wrap-region' does."
     (should-not called-cmd)
     (should deleted)
     (should yanked)))
+
+(ert-deftest donkey-yank-pastes-rectangle-when-flag-set ()
+  "Regression test: after `donkey-copy'/`donkey-delete' kill a rectangle
+elsewhere (rectangle-mark-mode no longer active here), `donkey-yank'
+must paste it back via `yank-rectangle' instead of pulling from the
+clipboard/kill ring -- otherwise there is no way to paste a
+rectangle-copied selection anywhere outside of `rectangle-mark-mode'
+itself."
+  (let ((donkey--last-kill-rectangle-p t)
+        rectangle-yanked clipboard-yanked)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
+                ((symbol-function 'yank-rectangle)
+                 (lambda () (setq rectangle-yanked t)))
+                ((symbol-function 'clipboard-yank)
+                 (lambda () (setq clipboard-yanked t))))
+        (let (rectangle-mark-mode)
+          (donkey-yank))))
+    (should rectangle-yanked)
+    (should-not clipboard-yanked)))
+
+(ert-deftest donkey-yank-rectangle-flag-deletes-active-region-first ()
+  "With an active (non-rectangle) region and the flag set, deletes the
+region before pasting the rectangle, same as the ordinary yank path."
+  (let ((donkey--last-kill-rectangle-p t)
+        deleted rectangle-yanked)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (push-mark 4)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () t))
+                ((symbol-function 'delete-active-region)
+                 (lambda () (setq deleted t)))
+                ((symbol-function 'yank-rectangle)
+                 (lambda () (setq rectangle-yanked t))))
+        (let (rectangle-mark-mode)
+          (donkey-yank))))
+    (should deleted)
+    (should rectangle-yanked)))
+
+(ert-deftest donkey-yank-does-not-paste-rectangle-when-flag-nil ()
+  "With the flag nil (no rectangle kill since the last ordinary kill),
+yanks normally via clipboard-yank, not yank-rectangle."
+  (let (donkey--last-kill-rectangle-p
+        rectangle-yanked clipboard-yanked)
+    (with-temp-buffer
+      (insert "hello\n")
+      (goto-char 1)
+      (cl-letf (((symbol-function 'use-region-p) (lambda () nil))
+                ((symbol-function 'yank-rectangle)
+                 (lambda () (setq rectangle-yanked t)))
+                ((symbol-function 'clipboard-yank)
+                 (lambda () (setq clipboard-yanked t))))
+        (let (rectangle-mark-mode)
+          (donkey-yank))))
+    (should-not rectangle-yanked)
+    (should clipboard-yanked)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; donkey-yank-pop

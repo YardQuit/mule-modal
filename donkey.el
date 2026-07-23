@@ -727,6 +727,41 @@ the function `delete-active-region'.  Handles both cases gracefully."
         (kill-active-region)
       (delete-active-region))))
 
+(defvar donkey--last-kill-rectangle-p nil
+  "Non-nil if the most recent kill/copy was rectangle content.
+
+`killed-rectangle' (see `rect.el') is a single global slot, entirely
+separate from the kill ring/system clipboard, and it is never cleared
+by a later, ordinary non-rectangle kill -- its mere presence doesn't
+mean it's the freshest thing killed.  This flag tracks which store is
+actually current, so `donkey-yank' knows whether \"p\" should paste it
+back via `yank-rectangle' instead of the ordinary clipboard/kill-ring
+path.
+
+Not buffer-local: `killed-rectangle' itself isn't either, and a
+rectangle copied in one buffer is meant to be pastable in another, the
+same way the kill ring is shared across buffers.
+
+Set to t directly by `donkey-copy'/`donkey-delete' whenever they
+kill/copy a rectangle.  Cleared back to nil automatically by advising
+`kill-new'/`kill-append' below -- the two functions ANY kill-ring
+push funnels through, including ones with no Donkey wrapper at all
+(e.g. `kill-line' bound directly to \"D\", or any stock kill command
+reached via Insert state's passthrough to standard Emacs keys)  so a
+stale rectangle copy from earlier in the session doesn't get pasted
+in place of a more recent, ordinary kill.")
+
+(defun donkey--clear-last-kill-rectangle-flag (&rest _)
+  "Clear `donkey--last-kill-rectangle-p'.
+
+Advised onto `kill-new'/`kill-append', which populate the ordinary
+kill ring -- meaning whatever is in `killed-rectangle' is no longer
+the freshest kill."
+  (setq donkey--last-kill-rectangle-p nil))
+
+(advice-add 'kill-new :before #'donkey--clear-last-kill-rectangle-flag)
+(advice-add 'kill-append :before #'donkey--clear-last-kill-rectangle-flag)
+
 (defun donkey-yank ()
   "Yank clipboard content, replacing the active region if present.
 
@@ -748,12 +783,24 @@ deactivates the mark, which `rectangle-mark-mode' itself is hooked
 to auto-disable on -- so by the time the plain linear yank below ran,
 `rectangle-mark-mode' was already nil, and the paste landed only on
 whichever single row point ended up on, silently leaving every other
-row of the just-deleted rectangle with nothing to replace it."
+row of the just-deleted rectangle with nothing to replace it.
+
+Otherwise, if the most recent kill was a rectangle (see
+`donkey--last-kill-rectangle-p'), pastes it back via `yank-rectangle'
+at point instead of pulling from the clipboard/kill ring -- completing
+the round trip for `donkey-copy'/`donkey-delete's rectangle handling,
+which would otherwise populate `killed-rectangle' with no way to
+paste it back anywhere outside of `rectangle-mark-mode' itself."
   (interactive)
-  (if (bound-and-true-p rectangle-mark-mode)
-      (call-interactively #'undefined)
+  (cond
+   ((bound-and-true-p rectangle-mark-mode)
+    (call-interactively #'undefined))
+   (donkey--last-kill-rectangle-p
     (donkey--delete-active-region-safe)
-    (donkey--clipboard-yank)))
+    (yank-rectangle))
+   (t
+    (donkey--delete-active-region-safe)
+    (donkey--clipboard-yank))))
 
 (defun donkey-yank-pop ()
   "Replace the last yanked text with the next `kill-ring' entry.
@@ -783,18 +830,26 @@ at point."
   (interactive)
   (if (use-region-p)
       (if (bound-and-true-p rectangle-mark-mode)
-          (call-interactively #'copy-rectangle-as-kill)
+          (progn
+            (call-interactively #'copy-rectangle-as-kill)
+            (setq donkey--last-kill-rectangle-p t))
         (kill-ring-save (region-beginning) (region-end)))
     (kill-ring-save (point) (min (point-max) (1+ (point)))))
   (deactivate-mark))
 
 (defun donkey-delete ()
-  "Delete character or region."
+  "Delete character or region.
+
+With `rectangle-mark-mode' active, kills the rectangle via
+`kill-rectangle' -- see `donkey--last-kill-rectangle-p' for how
+`donkey-yank' later knows to paste it back as a rectangle."
   (interactive)
   (if (use-region-p)
       (progn
         (if (bound-and-true-p rectangle-mark-mode)
-            (call-interactively #'kill-rectangle)
+            (progn
+              (call-interactively #'kill-rectangle)
+              (setq donkey--last-kill-rectangle-p t))
           (kill-region (mark) (point))))
     (delete-char 1)))
 
